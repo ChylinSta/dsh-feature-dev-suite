@@ -85,6 +85,21 @@ dsh --profile web --dump-config | grep -n feature-dev
 - 「approve，方案可以落地」 / 「reject，缺回滚方案」
 - 「`feature_dev` status」
 
+### 侧边栏面板
+
+Desktop / Web 左侧栏有一行 **功能开发 / Feature Dev**（`sidebar.panellist`）。点开后是同 id `feature-dev` 的 `main` 面板：
+
+- 有运行就列出；没有则是空状态，Start 要一段功能说明（`featureSummary`），可选风险标签，以及是否打开 `adversarialDesign` / `adversarialCode`
+- 阶段板与宿主 state 一致：requirements → design → design_review → testcases →（按风险或开关出现的 adversarial_design / adversarial_code）→ implement → verify → human_diff → done
+- 每个阶段的状态：pending / active / blocked / done / approved / failed
+- Advance、Approve、Reject（原因）、Refresh
+- 停在 design_review 或 human_diff 且为 blocked 时，通过和驳回是主按钮
+- 产物目录 `.feature-dev/<runId>/`
+
+通过和驳回直接改宿主 state，和聊天里的 `feature_dev` 是同一套动作。已通过的门禁可以在面板里 Advance 进入下一阶段。**执行**某个阶段（写产物、跑 workflow）仍然要在会话里调用 `feature_dev` advance，因为那一步需要当前 agent 和 `workflowEngine`。
+
+浏览器包是预构建的 `lib/client.js`，安装不需要 `allowBuilds`。
+
 产物目录：工作区 `.feature-dev/<runId>/`
 
 | 阶段 | 文件 | 门禁 |
@@ -189,4 +204,5 @@ feature-dev-suite/
 - [x] `feature_dev`：start / status / advance / approve / reject
 - [x] `advance` 经 `workflowEngine` 执行（含 design_review 双视角）
 - [x] 可安装 `dsh.bundle` + 预构建 tarball
+- [x] Desktop/Web 侧边栏阶段板（与 `feature_dev` 共用 state）
 - [ ] 实现阶段更细的工具白名单 / preset

@@ -32,3 +32,27 @@ const text = readFileSync(outfile, "utf8");
 if (text.startsWith(`${banner}\n`)) {
   writeFileSync(outfile, banner + text.slice(banner.length + 1));
 }
+
+await esbuild.build({
+  absWorkingDir: root,
+  entryPoints: ["src/core.ts"],
+  bundle: true,
+  platform: "node",
+  format: "esm",
+  outfile: "lib/core.js",
+  packages: "external",
+  charset: "ascii",
+  legalComments: "none",
+  logLevel: "info",
+});
+
+const client = readFileSync(join(root, "src/client/entry.js"), "utf8");
+writeFileSync(join(root, "lib/client.js"), [
+  "window.__ModuleLoader__.load({ id: \"dsh-feature-dev-suite\", factory: (require) => {",
+  "var module = { exports: {} };",
+  "var exports = module.exports;",
+  client,
+  "return module.exports;",
+  "} });",
+  "",
+].join("\n"));

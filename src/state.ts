@@ -70,6 +70,31 @@ export function readState(workspaceRoot: string, runId: string): RunState {
   return JSON.parse(raw) as RunState;
 }
 
+/** Runs stored under `<workspace>/.feature-dev`, newest first. */
+export function listRunStates(workspaceRoot: string): RunState[] {
+  const home = path.join(workspaceRoot, ".feature-dev");
+  let names: string[] = [];
+  try {
+    names = fs.readdirSync(home);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw error;
+  }
+  const runs: RunState[] = [];
+  for (const name of names) {
+    if (!/^fd-[a-z0-9-]+$/.test(name)) continue;
+    try {
+      const state = readState(workspaceRoot, name);
+      if (state.runId !== name) continue;
+      runs.push(state);
+    } catch {
+      continue;
+    }
+  }
+  runs.sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : a.updatedAt > b.updatedAt ? -1 : 0));
+  return runs;
+}
+
 export function createRun(input: CreateRunInput): RunState {
   const runId = `fd-${Date.now().toString(36)}`;
   const risks = input.risks ?? [];
