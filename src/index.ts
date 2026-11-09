@@ -1,6 +1,7 @@
 import { defineTool } from "@deepseek-ai/dsh-tools";
 import { runFeatureDev } from "./actions.js";
 import type { FeatureDevArgs } from "./actions.js";
+import { resolveImplementTools } from "./implement-tools.js";
 import { makeFeatureDevRoutes } from "./routes.js";
 import type { WorkflowEngine } from "./runner.js";
 import { createFeatureApi, resolveRoot } from "./service.js";
@@ -29,13 +30,17 @@ interface HostContext {
   inject?(deps: string[], plugin: (ctx: HostContext) => (() => void) | void): unknown;
 }
 
-export function apply(ctx: HostContext, config?: { root?: string }): void {
+export function apply(ctx: HostContext, config?: { root?: string; implementTools?: unknown }): void {
   // The panel shares disk state with the tool. It is not given a session agent:
   // workflowEngine.start requires the live parent from a chat turn (cwd, lineage,
   // and child attribution). Leaving an approved gate does not start a workflow.
+  // workflow agent() also cannot carry a toolFilter, so implementTools is a
+  // prompt contract snapshotted onto the run, not a runtime restrict().
+  const implementTools = resolveImplementTools(config?.implementTools);
   const api = createFeatureApi({
     root: resolveRoot(config),
     engine: ctx.workflowEngine,
+    implementTools,
   });
   ctx.provide?.("featureDev", api);
   ctx.inject?.(["webServer"], (scoped) => {
@@ -49,7 +54,7 @@ export function apply(ctx: HostContext, config?: { root?: string }): void {
 
   ctx.tools.register(defineTool<FeatureDevArgs, string>({
     name: "feature_dev",
-    description: "Orchestrate a gated feature-development pipeline. The sidebar and this tool share .feature-dev/<runId>/. start, approve, and reject only update that state. advance executes the current stage through workflowEngine and requires this chat's agent — the sidebar cannot, because it has no session. After a human gate is approved, the next advance only leaves the gate; call advance again to execute the following stage. status reports next, sidebarAdvance, hint, chat, and artifact. Stages: requirements → design → design_review (human approve) → testcases → optional adversarial reviews → implement → verify → human_diff (human approve).",
+    description: "Orchestrate a gated feature-development pipeline. The sidebar and this tool share .feature-dev/<runId>/. start, approve, and reject only update that state. advance executes the current stage through workflowEngine and requires this chat's agent — the sidebar cannot, because it has no session. After a human gate is approved, the next advance only leaves the gate and does not execute the following stage; call advance again once that stage is active. status reports next, sidebarAdvance, hint, chat, artifact, and implementTools. New runs snapshot an implement tool allowlist into the implement prompt (config implementTools, or false to opt out). The workflow engine cannot enforce that list. Stages: requirements → design → design_review (human approve) → testcases → optional adversarial reviews → implement → verify → human_diff (human approve).",
     parameters: {
       action: {
         type: "string",
@@ -82,6 +87,11 @@ export function apply(ctx: HostContext, config?: { root?: string }): void {
         type: "boolean",
         description: "Force deep adversarial code review",
       },
+      implementTools: {
+        type: "array",
+        items: { type: "string" },
+        description: "Tool names the implement stage may use. Omit for the plugin default (read, write, edit, apply_patch, grep, glob, bash, todo_write). The workflow engine cannot enforce the list; it is written into the implement prompt. Plugin config implementTools: false opts out.",
+      },
       reason: {
         type: "string",
         description: "Reason for approve/reject",
@@ -92,7 +102,7 @@ export function apply(ctx: HostContext, config?: { root?: string }): void {
       render: (_args, value) => [{ type: "text", text: value }],
     },
     async execute(args, exec) {
-      const result = await runFeatureDev(ctx.workflowEngine, args, exec.agent, exec.signal);
+      const result = await runFeatureDev(ctx.workflowEngine, args, exec.agent, exec.signal, { implementTools });
       return result.text;
     },
   }));

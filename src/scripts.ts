@@ -6,6 +6,8 @@ export interface StageScriptArgs {
   testcases: string;
   implNotes: string;
   deep: boolean;
+  /** `null` keeps the historical unrestricted implement prompt. */
+  implementTools: string[] | null;
 }
 
 export interface StageScript {
@@ -19,6 +21,12 @@ export interface StageScript {
 
 function j(s: string): string {
   return JSON.stringify(s);
+}
+
+function implementAllowlistLine(tools: string[] | null): string {
+  if (!tools || tools.length === 0) return "";
+  const sentence = `Tool allowlist: call only these tools: ${tools.join(", ")}. Do not call feature_dev, workflow, subagent, or any tool not in that list. If something you need is missing, name it under ## Remaining work and stop.`;
+  return `${JSON.stringify(sentence)},\n  `;
 }
 export function buildStageScript(stage: string, args: StageScriptArgs): StageScript | null {
   const commonArgs = `const featureSummary = ${j(args.featureSummary)}
@@ -225,7 +233,7 @@ const text = await agent([
   'You implement the approved feature design in the current workspace.',
   'Follow repository conventions. Prefer small slices. Update/add tests when appropriate.',
   'When finished, return Markdown notes: ## Changes ## Commands run ## Remaining work',
-  '',
+  ${implementAllowlistLine(args.implementTools)}'',
   'Requirements:', requirements || '(missing)',
   '',
   'Design:', design || '(missing)',

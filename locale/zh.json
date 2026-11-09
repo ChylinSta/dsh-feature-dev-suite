@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "功能开发",
-    "description": "左侧栏的功能开发阶段板。开始、通过、驳回，以及离开已通过的门禁在这里完成。执行阶段仍在 feature_dev 聊天工具里，它读取同一份 .feature-dev 目录。"
+    "description": "左侧栏的功能开发阶段板。开始、通过、驳回，以及离开已通过的门禁在这里完成。聊天里的下一次 feature_dev advance 才执行刚变成进行中的阶段。它读取同一份 .feature-dev 目录。"
   }
 }

@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "Feature Dev",
-    "description": "Sidebar stage board for a feature run. Start, approve, reject, and leaving an approved gate happen here. Executing a stage stays in the feature_dev chat tool, which reads the same .feature-dev directory."
+    "description": "Sidebar stage board for a feature run. Start, approve, reject, and leaving an approved gate happen here. The next chat advance executes the stage that just became active. Executing a stage stays in feature_dev, which reads the same .feature-dev directory."
   }
 }
