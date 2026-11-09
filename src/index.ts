@@ -30,6 +30,9 @@ interface HostContext {
 }
 
 export function apply(ctx: HostContext, config?: { root?: string }): void {
+  // The panel shares disk state with the tool. It is not given a session agent:
+  // workflowEngine.start requires the live parent from a chat turn (cwd, lineage,
+  // and child attribution). Leaving an approved gate does not start a workflow.
   const api = createFeatureApi({
     root: resolveRoot(config),
     engine: ctx.workflowEngine,
@@ -46,7 +49,7 @@ export function apply(ctx: HostContext, config?: { root?: string }): void {
 
   ctx.tools.register(defineTool<FeatureDevArgs, string>({
     name: "feature_dev",
-    description: "Orchestrate a gated feature-development pipeline with real stage execution via workflowEngine. Stages: requirements → design → design_review (mandatory discussion + human approve) → testcases → optional adversarial reviews → implement → verify → human_diff. Actions: start, status, advance (execute current stage), approve, reject.",
+    description: "Orchestrate a gated feature-development pipeline. The sidebar and this tool share .feature-dev/<runId>/. start, approve, and reject only update that state. advance executes the current stage through workflowEngine and requires this chat's agent — the sidebar cannot, because it has no session. After a human gate is approved, the next advance only leaves the gate; call advance again to execute the following stage. status reports next, sidebarAdvance, hint, chat, and artifact. Stages: requirements → design → design_review (human approve) → testcases → optional adversarial reviews → implement → verify → human_diff (human approve).",
     parameters: {
       action: {
         type: "string",
@@ -56,7 +59,7 @@ export function apply(ctx: HostContext, config?: { root?: string }): void {
       },
       runId: {
         type: "string",
-        description: "Existing run id (required except for start)",
+        description: "Existing run id from the sidebar or an earlier start (required except for start)",
       },
       featureSummary: {
         type: "string",

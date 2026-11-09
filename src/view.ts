@@ -1,5 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
+import { expectedArtifact, nextHint, nextStep, sidebarCanAdvance, chatAdvanceCall } from "./guidance.js";
+import type { ChatCall, ExecutionContext, NextCode } from "./guidance.js";
 import { STAGE_DEFS } from "./phases.js";
 import { runDir } from "./state.js";
 import type { RunState } from "./state.js";
@@ -9,6 +11,21 @@ export interface StageView {
   title: string;
   status: string;
   humanGate: boolean;
+}
+
+export interface ArtifactFileView {
+  name: string;
+  relativePath: string;
+  stageId: string | null;
+  placeholder: boolean;
+}
+
+export interface NextView {
+  code: NextCode;
+  advanceEnabled: boolean;
+  stage: string;
+  gate: "design_review" | "human_diff" | null;
+  hint: string;
 }
 
 export interface RunView {
@@ -30,9 +47,36 @@ export interface RunView {
   artifactPath: string;
   files: string[];
   notes: string[];
+  execution: { session: boolean; engine: boolean };
+  next: NextView;
+  chatCall: ChatCall | null;
+  expectedFile: string | null;
+  expectedRelative: string | null;
+  artifactFiles: ArtifactFileView[];
 }
 
-export function presentRun(state: RunState): RunView {
+const ARTIFACT_STAGE = new Map(
+  STAGE_DEFS.flatMap((stage) => stage.artifact ? [[stage.artifact, stage.id] as const] : []),
+);
+
+function isPlaceholder(file: string): boolean {
+  let fd: number | undefined;
+  try {
+    fd = fs.openSync(file, "r");
+    const buffer = Buffer.alloc(512);
+    const n = fs.readSync(fd, buffer, 0, buffer.length, 0);
+    return buffer.toString("utf8", 0, n).includes("(skeleton placeholder)");
+  } catch {
+    return false;
+  } finally {
+    if (fd !== undefined) fs.closeSync(fd);
+  }
+}
+
+export function presentRun(state: RunState, context: Partial<ExecutionContext> = {}): RunView {
+  const session = context.session === true;
+  const engine = context.engine === true;
+  const caller = { session, engine };
   const dir = runDir(state.workspaceRoot, state.runId);
   let names: string[] = [];
   try {
@@ -40,12 +84,14 @@ export function presentRun(state: RunState): RunView {
   } catch {
     names = [];
   }
+  const visible = names.filter((name) => name !== "state.json" && !name.endsWith(".tmp")).sort();
   const currentDef = STAGE_DEFS.find((stage) => stage.id === state.current);
   const status = state.statusByStage[state.current] ?? "pending";
   const humanGate = currentDef?.humanGate === true && state.current !== "done";
-  const gate = humanGate && status === "blocked" && (state.current === "design_review" || state.current === "human_diff")
-    ? state.current
-    : null;
+  const step = nextStep(state);
+  const gate = step.code === "await_decision" ? step.gate : null;
+  const expected = expectedArtifact(state);
+  const wantsChat = step.code === "execute_in_chat" || step.code === "retry_in_chat";
   return {
     id: state.runId,
     featureSummary: state.featureSummary,
@@ -71,7 +117,24 @@ export function presentRun(state: RunState): RunView {
     }),
     artifactDir: `.feature-dev/${state.runId}`,
     artifactPath: dir,
-    files: names.filter((name) => name !== "state.json").sort(),
+    files: visible,
     notes: state.notes.slice(-8),
+    execution: caller,
+    next: {
+      code: step.code,
+      advanceEnabled: sidebarCanAdvance(step, caller),
+      stage: step.stage,
+      gate: step.gate,
+      hint: nextHint(state, step, caller),
+    },
+    chatCall: wantsChat ? chatAdvanceCall(state.runId) : null,
+    expectedFile: expected?.file ?? null,
+    expectedRelative: expected?.relativePath ?? null,
+    artifactFiles: visible.map((name) => ({
+      name,
+      relativePath: `.feature-dev/${state.runId}/${name}`,
+      stageId: ARTIFACT_STAGE.get(name) ?? null,
+      placeholder: isPlaceholder(path.join(dir, name)),
+    })),
   };
 }

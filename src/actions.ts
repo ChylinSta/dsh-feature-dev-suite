@@ -4,6 +4,8 @@
  * Returned text matches the tool's previous messages.
  */
 
+import { FeatureDevError } from "./errors.js";
+import { chatAdvanceCall, expectedArtifact, nextHint, nextStep } from "./guidance.js";
 import { STAGE_DEFS } from "./phases.js";
 import { executeStage } from "./runner.js";
 import type { WorkflowEngine } from "./runner.js";
@@ -24,9 +26,12 @@ export interface FeatureDevArgs {
 export interface FeatureDevResult {
   text: string;
   state: RunState | null;
+  code: string;
+  applied: boolean;
 }
 
-function summarize(state: RunState): string {
+function summarize(state: RunState, context: { session: boolean; engine: boolean }): string {
+  const step = nextStep(state);
   const lines = [
     `runId: ${state.runId}`,
     `current: ${state.current}`,
@@ -36,7 +41,15 @@ function summarize(state: RunState): string {
     `risks: ${state.risks.join(", ") || "(none)"}`,
     `adversarialDesign: ${state.adversarialDesign}`,
     `adversarialCode: ${state.adversarialCode}`,
+    `next: ${step.code}`,
+    `sidebarAdvance: ${step.code === "leave_gate" ? "leave-gate-only" : "no"}`,
+    `hint: ${nextHint(state, step, context)}`,
   ];
+  if (step.code === "execute_in_chat" || step.code === "retry_in_chat") {
+    lines.push(`chat: ${chatAdvanceCall(state.runId).text}`);
+  }
+  const expected = expectedArtifact(state);
+  if (expected) lines.push(`artifact: ${expected.relativePath}`);
   const def = STAGE_DEFS.find((s) => s.id === state.current);
   if (def?.humanGate && state.statusByStage[state.current] === "blocked") {
     lines.push(`gate: waiting for human approve/reject on ${state.current}`);
@@ -63,10 +76,17 @@ export async function runFeatureDev(
   agent: unknown,
   signal: AbortSignal | undefined,
 ): Promise<FeatureDevResult> {
+  const caller = { session: Boolean(agent), engine: Boolean(engine) };
+  const reply = (text: string, state: RunState | null, code: string, applied: boolean): FeatureDevResult => ({
+    text,
+    state,
+    code,
+    applied,
+  });
   const workspaceRoot = args.workspaceRoot?.trim() || process.cwd();
   if (args.action === "start") {
     if (!args.featureSummary?.trim()) {
-      throw new Error("featureSummary is required for start");
+      throw new FeatureDevError("featureSummary is required for start", { code: "feature_summary_required", status: 400 });
     }
     const state = createRun({
       workspaceRoot,
@@ -75,19 +95,21 @@ export async function runFeatureDev(
       adversarialDesign: args.adversarialDesign === true,
       adversarialCode: args.adversarialCode === true,
     });
-    return { text: `Started feature-dev run.\n${summarize(state)}`, state };
+    return reply(`Started feature-dev run.\n${summarize(state, caller)}`, state, "started", true);
   }
-  if (!args.runId?.trim()) throw new Error("runId is required");
+  if (!args.runId?.trim()) {
+    throw new FeatureDevError("runId is required", { code: "run_id_required", status: 400 });
+  }
   const state = readState(workspaceRoot, args.runId.trim());
   state.workspaceRoot = state.workspaceRoot || workspaceRoot;
   if (args.action === "status") {
-    return { text: summarize(state), state };
+    return reply(summarize(state, caller), state, "status", false);
   }
   if (args.action === "approve") {
     const cur = state.current;
     const def = STAGE_DEFS.find((s) => s.id === cur);
     if (!def?.humanGate) {
-      throw new Error(`current stage ${cur} is not a human gate`);
+      throw new FeatureDevError(`current stage ${cur} is not a human gate`, { code: "not_a_gate", status: 400, state });
     }
     if (state.statusByStage[cur] !== "blocked" && state.statusByStage[cur] !== "active") {
       // Published bundle keeps this branch and still records the approval.
@@ -95,13 +117,18 @@ export async function runFeatureDev(
     state.statusByStage[cur] = "approved";
     state.notes.push(`approved ${cur}: ${args.reason?.trim() || "ok"}`);
     writeState(state);
-    return { text: `Approved ${cur}. Call advance to continue.\n${summarize(state)}`, state };
+    return reply(
+      `Approved ${cur}. Call advance to continue. That next advance only leaves the gate; it does not execute the following stage.\n${summarize(state, caller)}`,
+      state,
+      "approved",
+      true,
+    );
   }
   if (args.action === "reject") {
     const cur = state.current;
     const def = STAGE_DEFS.find((s) => s.id === cur);
     if (!def?.humanGate) {
-      throw new Error(`current stage ${cur} is not a human gate`);
+      throw new FeatureDevError(`current stage ${cur} is not a human gate`, { code: "not_a_gate", status: 400, state });
     }
     const i = state.stages.indexOf(cur);
     const back = i > 0 ? state.stages[i - 1]! : cur;
@@ -110,12 +137,12 @@ export async function runFeatureDev(
     state.current = back;
     state.notes.push(`rejected ${cur} → back to ${back}: ${args.reason?.trim() || "(no reason)"}`);
     writeState(state);
-    return { text: `Rejected ${cur}, returned to ${back}.\n${summarize(state)}`, state };
+    return reply(`Rejected ${cur}, returned to ${back}.\n${summarize(state, caller)}`, state, "rejected", true);
   }
   if (args.action === "advance") {
     const cur = state.current;
     if (cur === "done") {
-      return { text: `Already done.\n${summarize(state)}`, state };
+      return reply(`Already done.\n${summarize(state, caller)}`, state, "already_done", false);
     }
     const def = STAGE_DEFS.find((s) => s.id === cur);
     const status = state.statusByStage[cur];
@@ -126,18 +153,31 @@ export async function runFeatureDev(
         state.current = "done";
         state.statusByStage.done = "done";
         writeState(state);
-        return { text: `Left approved gate ${cur} → done.\n${summarize(state)}`, state };
+        return reply(`Left approved gate ${cur} → done.\n${summarize(state, caller)}`, state, "left_gate", true);
       }
       moveTo(state, nxt);
       state.notes.push(`left approved gate ${cur} → ${nxt}`);
       writeState(state);
-      return { text: `Left approved gate ${cur} → ${nxt}.\n${summarize(state)}`, state };
+      return reply(
+        `Left approved gate ${cur} → ${nxt}. Call advance again in this chat to execute ${nxt}.\n${summarize(state, caller)}`,
+        state,
+        "left_gate",
+        true,
+      );
     }
     if (def?.humanGate && status === "blocked") {
-      return { text: `Cannot advance: ${cur} is waiting for human approve/reject.\n${summarize(state)}`, state };
+      return reply(
+        `Cannot advance: ${cur} is waiting for human approve/reject.\n${summarize(state, caller)}`,
+        state,
+        "awaiting_decision",
+        false,
+      );
     }
     if (!agent) {
-      throw new Error("feature_dev advance requires a calling agent (exec.agent was undefined)");
+      throw new FeatureDevError(
+        `Executing stage ${cur} needs a calling agent in a chat session. The sidebar shares .feature-dev/${state.runId}/ but cannot start workflowEngine without that agent.`,
+        { code: "needs_session", status: 409, chatCall: chatAdvanceCall(state.runId), state },
+      );
     }
     state.notes.push(`executing stage ${cur}`);
     writeState(state);
@@ -146,14 +186,25 @@ export async function runFeatureDev(
       state.statusByStage[cur] = "failed";
       state.notes.push(`stage ${cur} failed: ${result.detail}`);
       writeState(state);
-      throw new Error(result.detail);
+      const missingEngine = result.detail.includes("workflowEngine");
+      throw new FeatureDevError(result.detail, {
+        code: missingEngine ? "engine_unavailable" : "stage_failed",
+        status: 400,
+        chatCall: chatAdvanceCall(state.runId),
+        state,
+      });
     }
     state.notes.push(result.detail);
     if (result.artifactPath) state.notes.push(`wrote ${result.artifactPath}`);
     if (def?.humanGate) {
       state.statusByStage[cur] = "blocked";
       writeState(state);
-      return { text: `Stage ${cur} executed; human gate is now blocked pending approve/reject.\n${summarize(state)}`, state };
+      return reply(
+        `Stage ${cur} executed; human gate is now blocked pending approve/reject.\n${summarize(state, caller)}`,
+        state,
+        "executed",
+        true,
+      );
     }
     state.statusByStage[cur] = "done";
     const nxt = nextStage(state);
@@ -161,11 +212,11 @@ export async function runFeatureDev(
       state.current = "done";
       state.statusByStage.done = "done";
       writeState(state);
-      return { text: `Stage ${cur} done → pipeline complete.\n${summarize(state)}`, state };
+      return reply(`Stage ${cur} done → pipeline complete.\n${summarize(state, caller)}`, state, "executed", true);
     }
     moveTo(state, nxt);
     writeState(state);
-    return { text: `Stage ${cur} done → ${nxt} is active.\n${summarize(state)}`, state };
+    return reply(`Stage ${cur} done → ${nxt} is active.\n${summarize(state, caller)}`, state, "executed", true);
   }
-  throw new Error(`unknown action: ${args.action}`);
+  throw new FeatureDevError(`unknown action: ${args.action}`, { code: "unknown_action", status: 400 });
 }
