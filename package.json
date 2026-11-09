@@ -1,0 +1,49 @@
+{
+  "name": "dsh-feature-dev-suite",
+  "description": "Gated feature-development workflow: requirements → design review → tests → implement → verify → human diff",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/index.js",
+    "cordis.patch.yml",
+    "prompts",
+    "README.zh.md",
+    "README.md"
+  ],
+  "license": "MIT",
+  "engines": {
+    "dsh": ">=0.2.0"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "*",
+    "@deepseek-ai/dsh-agent": "*",
+    "@deepseek-ai/dsh-tools": "*",
+    "@deepseek-ai/dsh-workflow": "*",
+    "@deepseek-ai/dsh-workflow-ptc": "*"
+  },
+  "scripts": {
+    "build": "node ./scripts/build.mjs",
+    "pack:bundle": "npm run build && npm pack"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/dsh-workflow-ptc": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "esbuild": "0.28.2",
+    "typescript": "^7.0.2"
+  }
+}

@@ -1,0 +1,17 @@
+# Dev overlay for `dsh --profile web --patch ./cordis.yml`.
+# Relative names are anchored beside this file. Points at ./src so TypeScript
+# can hot-reload. Installing into a profile uses cordis.patch.yml instead
+# (package name → prebuilt lib/index.js).
+- insert:
+    - id: feature-dev-suite
+      name: cordis:group
+      group: true
+      isolate:
+        workflowEngine: true
+      config:
+        - id: feature-dev-workflow-ptc
+          name: '@deepseek-ai/dsh-workflow-ptc'
+          config:
+            provider: spawn
+        - id: feature-dev-suite-plugin
+          name: ./src/index.ts

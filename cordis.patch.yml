@@ -1,0 +1,16 @@
+# Installable dsh.bundle layer for Desktop / `dsh plugin add`.
+# Isolates a spawn-backed workflowEngine (same pattern as ralph-bundle) so the
+# tool can run stages without relying on an agent-preset-only engine.
+- insert:
+    - id: feature-dev-suite
+      name: cordis:group
+      group: true
+      isolate:
+        workflowEngine: true
+      config:
+        - id: feature-dev-workflow-ptc
+          name: '@deepseek-ai/dsh-workflow-ptc'
+          config:
+            provider: spawn
+        - id: feature-dev-suite-plugin
+          name: dsh-feature-dev-suite
