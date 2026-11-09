@@ -1,0 +1,28 @@
+import assert from 'node:assert/strict'
+import { readFile } from 'node:fs/promises'
+import test from 'node:test'
+
+test('the bundle keeps the workflow group and publishes the sidebar client', async () => {
+  const patch = await readFile(new URL('../cordis.patch.yml', import.meta.url), 'utf8')
+  assert.match(patch, /id: feature-dev-suite/)
+  assert.match(patch, /name: cordis:group/)
+  assert.match(patch, /workflowEngine: true/)
+  assert.match(patch, /name: dsh-feature-dev-suite/)
+  const manifest = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'))
+  assert.equal(manifest.name, 'dsh-feature-dev-suite')
+  assert.equal(manifest.dsh.bundle.patch, './cordis.patch.yml')
+  assert.equal(manifest.dsh.client.platform, 'web')
+  assert.equal(manifest.exports['.'], './lib/index.js')
+  assert.equal(manifest.exports['./client'], './lib/client.js')
+  const client = await readFile(new URL('../lib/client.js', import.meta.url), 'utf8')
+  assert.match(client, /window\.__ModuleLoader__\.load/)
+  assert.match(client, /sidebar\.panellist/)
+  assert.match(client, /name: 'main'/)
+  assert.match(client, /功能开发 \/ Feature Dev/)
+  const host = await readFile(new URL('../lib/index.js', import.meta.url), 'utf8')
+  assert.match(host, /feature_dev/)
+  assert.match(host, /featureSummary is required for start/)
+  const readme = await readFile(new URL('../README.zh.md', import.meta.url), 'utf8')
+  assert.match(readme, /功能开发/)
+  assert.match(readme, /sidebar\.panellist/)
+})

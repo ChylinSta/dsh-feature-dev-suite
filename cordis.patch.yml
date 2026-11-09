@@ -1,6 +1,10 @@
 # Installable dsh.bundle layer for Desktop / `dsh plugin add`.
 # Isolates a spawn-backed workflowEngine (same pattern as ralph-bundle) so the
 # tool can run stages without relying on an agent-preset-only engine.
+# The same package publishes the browser half (package.json dsh.client →
+# lib/client.js): sidebar.panellist + main, both id feature-dev. A second
+# package-root row would register the tool twice and fail client-module
+# composition, so the panel's HTTP face is registered by this plugin.
 - insert:
     - id: feature-dev-suite
       name: cordis:group

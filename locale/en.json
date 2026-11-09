@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Feature Dev",
+    "description": "Sidebar stage board for a feature run: requirements through human diff, with start, advance, approve, and reject. The feature_dev tool reads the same .feature-dev directory."
+  }
+}
