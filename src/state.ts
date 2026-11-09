@@ -17,6 +17,11 @@ export interface RunState {
   current: string;
   notes: string[];
   workspaceRoot: string;
+  /**
+   * Tool names the implement prompt may use.
+   * Missing on runs started before the allowlist. `null` is an explicit opt-out.
+   */
+  implementTools?: string[] | null;
 }
 
 export interface CreateRunInput {
@@ -26,6 +31,8 @@ export interface CreateRunInput {
   adversarialDesign?: boolean;
   adversarialCode?: boolean;
   maxCodeReviewRounds?: number;
+  /** `null` leaves implement unrestricted. Omit to use the caller's default. */
+  implementTools?: string[] | null;
 }
 
 export function runDir(workspaceRoot: string, runId: string): string {
@@ -105,6 +112,12 @@ function coerceRun(value: unknown, workspaceRoot: string, runId: string): RunSta
   if (typeof state.adversarialDesign !== "boolean") state.adversarialDesign = false;
   if (typeof state.adversarialCode !== "boolean") state.adversarialCode = false;
   if (typeof state.maxCodeReviewRounds !== "number") state.maxCodeReviewRounds = 2;
+  if (Array.isArray(state.implementTools)) {
+    state.implementTools = state.implementTools.filter((name) => typeof name === "string" && name.trim() !== "");
+    if (state.implementTools.length === 0) state.implementTools = null;
+  } else if (state.implementTools != null) {
+    delete state.implementTools;
+  }
   return state;
 }
 
@@ -196,6 +209,7 @@ export function createRun(input: CreateRunInput): RunState {
     current: "requirements",
     notes: [],
     workspaceRoot: input.workspaceRoot,
+    implementTools: input.implementTools === undefined ? null : input.implementTools,
   };
   writeState(state);
   const dir = runDir(input.workspaceRoot, runId);

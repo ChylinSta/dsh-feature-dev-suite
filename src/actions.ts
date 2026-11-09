@@ -5,7 +5,8 @@
  */
 
 import { FeatureDevError } from "./errors.js";
-import { chatAdvanceCall, expectedArtifact, nextHint, nextStep } from "./guidance.js";
+import { chatAdvanceCall, expectedArtifact, followingStage, nextHint, nextStep } from "./guidance.js";
+import { implementToolLine, resolveImplementTools } from "./implement-tools.js";
 import { STAGE_DEFS } from "./phases.js";
 import { executeStage } from "./runner.js";
 import type { WorkflowEngine } from "./runner.js";
@@ -21,6 +22,13 @@ export interface FeatureDevArgs {
   adversarialDesign?: boolean;
   adversarialCode?: boolean;
   reason?: string;
+  /** Present only on start. `false` leaves implement unrestricted. */
+  implementTools?: string[] | false;
+}
+
+export interface FeatureDevDefaults {
+  /** Resolved plugin default. `null` means new runs stay unrestricted. */
+  implementTools: string[] | null;
 }
 
 export interface FeatureDevResult {
@@ -41,12 +49,13 @@ function summarize(state: RunState, context: { session: boolean; engine: boolean
     `risks: ${state.risks.join(", ") || "(none)"}`,
     `adversarialDesign: ${state.adversarialDesign}`,
     `adversarialCode: ${state.adversarialCode}`,
+    `implementTools: ${implementToolLine(state.implementTools)}`,
     `next: ${step.code}`,
     `sidebarAdvance: ${step.code === "leave_gate" ? "leave-gate-only" : "no"}`,
     `hint: ${nextHint(state, step, context)}`,
   ];
   if (step.code === "execute_in_chat" || step.code === "retry_in_chat") {
-    lines.push(`chat: ${chatAdvanceCall(state.runId).text}`);
+    lines.push(`chat: ${chatAdvanceCall(state).text}`);
   }
   const expected = expectedArtifact(state);
   if (expected) lines.push(`artifact: ${expected.relativePath}`);
@@ -75,6 +84,7 @@ export async function runFeatureDev(
   args: FeatureDevArgs,
   agent: unknown,
   signal: AbortSignal | undefined,
+  defaults: FeatureDevDefaults = { implementTools: null },
 ): Promise<FeatureDevResult> {
   const caller = { session: Boolean(agent), engine: Boolean(engine) };
   const reply = (text: string, state: RunState | null, code: string, applied: boolean): FeatureDevResult => ({
@@ -94,6 +104,11 @@ export async function runFeatureDev(
       risks: args.risks ?? [],
       adversarialDesign: args.adversarialDesign === true,
       adversarialCode: args.adversarialCode === true,
+      implementTools: args.implementTools === undefined
+        ? defaults.implementTools
+        : args.implementTools === false
+          ? null
+          : resolveImplementTools(args.implementTools),
     });
     return reply(`Started feature-dev run.\n${summarize(state, caller)}`, state, "started", true);
   }
@@ -117,8 +132,12 @@ export async function runFeatureDev(
     state.statusByStage[cur] = "approved";
     state.notes.push(`approved ${cur}: ${args.reason?.trim() || "ok"}`);
     writeState(state);
+    const nxt = followingStage(state);
+    const follow = !nxt || nxt === "done"
+      ? "That next advance only leaves the gate and marks the run done; it does not execute another stage."
+      : `That next advance only leaves the gate and makes ${nxt} active; it does not execute ${nxt}. When ${nxt} is active, call advance again in chat to execute ${nxt}.`;
     return reply(
-      `Approved ${cur}. Call advance to continue. That next advance only leaves the gate; it does not execute the following stage.\n${summarize(state, caller)}`,
+      `Approved ${cur}. Call advance to continue. ${follow}\n${summarize(state, caller)}`,
       state,
       "approved",
       true,
@@ -149,17 +168,23 @@ export async function runFeatureDev(
     if (def?.humanGate && status === "approved") {
       state.statusByStage[cur] = "done";
       const nxt = nextStage(state);
-      if (!nxt) {
+      if (!nxt || nxt === "done") {
         state.current = "done";
+        state.statusByStage[cur] = "done";
         state.statusByStage.done = "done";
         writeState(state);
-        return reply(`Left approved gate ${cur} → done.\n${summarize(state, caller)}`, state, "left_gate", true);
+        return reply(
+          `Left approved gate ${cur} → done. This advance finished the pipeline. It did not execute another stage.\n${summarize(state, caller)}`,
+          state,
+          "left_gate",
+          true,
+        );
       }
       moveTo(state, nxt);
       state.notes.push(`left approved gate ${cur} → ${nxt}`);
       writeState(state);
       return reply(
-        `Left approved gate ${cur} → ${nxt}. Call advance again in this chat to execute ${nxt}.\n${summarize(state, caller)}`,
+        `Left approved gate ${cur} → ${nxt}. This advance did not execute ${nxt}. Call advance again in this chat to execute ${nxt}.\n${summarize(state, caller)}`,
         state,
         "left_gate",
         true,
@@ -176,7 +201,7 @@ export async function runFeatureDev(
     if (!agent) {
       throw new FeatureDevError(
         `Executing stage ${cur} needs a calling agent in a chat session. The sidebar shares .feature-dev/${state.runId}/ but cannot start workflowEngine without that agent.`,
-        { code: "needs_session", status: 409, chatCall: chatAdvanceCall(state.runId), state },
+        { code: "needs_session", status: 409, chatCall: chatAdvanceCall(state), state },
       );
     }
     state.notes.push(`executing stage ${cur}`);
@@ -190,7 +215,7 @@ export async function runFeatureDev(
       throw new FeatureDevError(result.detail, {
         code: missingEngine ? "engine_unavailable" : "stage_failed",
         status: 400,
-        chatCall: chatAdvanceCall(state.runId),
+        chatCall: chatAdvanceCall(state),
         state,
       });
     }

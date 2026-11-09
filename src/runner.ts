@@ -74,6 +74,7 @@ export async function executeStage(
     testcases: readOptional(path.join(dir, "03-testcases.md")),
     implNotes: readOptional(path.join(dir, "04-impl-notes.md")),
     deep: stage === "design_review" ? shouldRunDeepDesign(state.risks, state.adversarialDesign) : state.adversarialDesign || state.adversarialCode,
+    implementTools: Array.isArray(state.implementTools) ? state.implementTools : null,
   });
   if (!built) {
     return { ok: false, detail: `no executor for stage ${stage}` };

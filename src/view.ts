@@ -53,6 +53,8 @@ export interface RunView {
   expectedFile: string | null;
   expectedRelative: string | null;
   artifactFiles: ArtifactFileView[];
+  /** `null` when this run does not constrain the implement stage. */
+  implementTools: string[] | null;
 }
 
 const ARTIFACT_STAGE = new Map(
@@ -127,7 +129,8 @@ export function presentRun(state: RunState, context: Partial<ExecutionContext> =
       gate: step.gate,
       hint: nextHint(state, step, caller),
     },
-    chatCall: wantsChat ? chatAdvanceCall(state.runId) : null,
+    chatCall: wantsChat ? chatAdvanceCall(state) : null,
+    implementTools: Array.isArray(state.implementTools) ? [...state.implementTools] : null,
     expectedFile: expected?.file ?? null,
     expectedRelative: expected?.relativePath ?? null,
     artifactFiles: visible.map((name) => ({

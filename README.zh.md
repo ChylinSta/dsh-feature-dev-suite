@@ -33,29 +33,29 @@ Desktop 的插件管理与 Web 共用同一套 Host API（侧栏 **插件** / �
 仓库里打好的包（或你本地执行 `npm run pack:bundle` 生成）：
 
 ```text
-dsh-feature-dev-suite-0.1.1.tgz
+dsh-feature-dev-suite-0.1.2.tgz
 ```
 
 在 **添加插件** 对话框里填该 `.tgz` 的**绝对路径**，或在已安装 Desktop 自带的 `dsh` CLI 里：
 
 ```sh
-dsh plugin --profile desktop add /绝对路径/dsh-feature-dev-suite-0.1.1.tgz
+dsh plugin --profile desktop add /绝对路径/dsh-feature-dev-suite-0.1.2.tgz
 ```
 
-### 更新已经装过的版本（0.1.0 → 0.1.1）
+### 更新已经装过的版本（0.1.0 → 0.1.2）
 
 本包的 Host 和侧栏都是预构建的 `lib/index.js`、`lib/client.js`。**不要**把 `dsh-feature-dev-suite` 写进 `allowBuilds`。若安装器要求编译本包，说明 tarball 里缺了 `lib/client.js`，不要改用源码安装来绕过。
 
-1. 在本目录执行 `npm run pack:bundle`，得到 `dsh-feature-dev-suite-0.1.1.tgz`
+1. 在本目录执行 `npm run pack:bundle`，得到 `dsh-feature-dev-suite-0.1.2.tgz`
 2. **完全退出** Desktop，再改它的 profile
 3. 用 Desktop「管理 dsh 命令…」装上的那份 `dsh`（不是 npm 全局的 `dsh`）：
 
    ```sh
-   dsh plugin --profile desktop add /绝对路径/dsh-feature-dev-suite-0.1.1.tgz
+   dsh plugin --profile desktop add /绝对路径/dsh-feature-dev-suite-0.1.2.tgz
    ```
 
    若同名包已在 profile 里、add 没有换成新 tarball，先 `dsh plugin --profile desktop remove dsh-feature-dev-suite`，再 add。侧栏插件管理里也可以先移除再填新 tarball 的绝对路径。
-4. 重新打开 Desktop。进行中的阶段上 **推进** 是禁用的，旁边有可复制的 `feature_dev` advance 调用；`design_review` / `human_diff` 被拦住时才出现通过和驳回。
+4. 重新打开 Desktop。进行中的阶段上 **推进** 是禁用的，旁边有可复制的 `feature_dev` advance 调用；`design_review` / `human_diff` 被拦住时才出现通过和驳回。门禁已通过时，提示会写出下一阶段的名字，并说明这一次推进不会执行它。
 
 > `desktop` 这个 profile 名由 Electron 桌面端持有；**npm 全局 `dsh` 不能**对它做插件管理。请用 Desktop 应用菜单里的「管理 dsh 命令…」装上的那份 `dsh`，或直接在 Desktop UI 里装。
 
@@ -68,7 +68,7 @@ dsh plugin --profile desktop add /绝对路径/dsh-feature-dev-suite-0.1.1.tgz
 pnpm dsh plugin --profile web add ./feature-dev-suite
 # 或
 dsh plugin --profile web add /绝对路径/feature-dev-suite
-dsh plugin --profile web add /绝对路径/dsh-feature-dev-suite-0.1.1.tgz
+dsh plugin --profile web add /绝对路径/dsh-feature-dev-suite-0.1.2.tgz
 ```
 
 验证层是否挂上：
@@ -119,14 +119,32 @@ Desktop / Web 左侧栏有一行 **功能开发 / Feature Dev**（`sidebar.panel
 | 还没有运行 | 开始（只建目录和占位） | `start` |
 | 阶段 `active` 或 `failed` | **推进禁用**，并给出可复制的调用 | `advance` **执行**当前阶段 |
 | `design_review` / `human_diff` 且 `blocked` | 通过 / 驳回是主按钮 | `approve` / `reject` |
-| 门禁已 `approved` | 推进只离开门禁，**不执行**下一阶段 | `advance` 做同样的离开；要再调一次 `advance` 才执行下一阶段 |
+| 门禁已 `approved` | 推进只离开门禁，把下一阶段标成进行中，**不执行**它 | 同一次离开。等该阶段变成进行中之后，再 `advance` 一次才执行 |
 | `done` | 只看产物 | `status` |
 
 `workflowEngine.start` 的 `parent` 必须是这一轮聊天里的 live Agent（工作目录、谱系、子 agent 都挂在它上面）。侧栏的 HTTP 路由不在会话里，插件创建面板 API 时**故意不传入** agent。若随便挑一个已经打开的会话来执行，阶段会跑在那个会话的工具和权限下，跨过隔离边界。所以面板在需要执行时返回 `409`，`code` 为 `needs_session`，正文里带可粘贴的 `feature_dev` advance 调用，并且不改 state。
 
 同一个 `createFeatureApi` 如果调用方自己带上了 session agent 和 `workflowEngine`，`advance` 会走原来的执行路径。Desktop 面板没有这份上下文，因此不执行。
 
-`status` 文本里有 `next`、`sidebarAdvance`、`hint`、`chat`、`artifact`，和阶段板上的下一步是同一份判断。
+`status` 文本里有 `next`、`sidebarAdvance`、`hint`、`chat`、`artifact`、`implementTools`，和阶段板上的下一步是同一份判断。门禁通过之后，`hint` 会点名下一阶段，并写明「下一次 advance 不执行它；等它变成 active 之后，再在聊天里 advance 一次才执行」。
+
+侧栏仍然不能启动 workflow。这条 HTTP 路由没有会话 agent，workflow 脚本里的 `agent()` 也不能携带 toolFilter。
+
+### 实现阶段的工具名单
+
+新运行会把默认名单写进 `state.json`：`read`、`write`、`edit`、`apply_patch`、`grep`、`glob`、`bash`、`todo_write`。实现阶段的提示要求子 agent 只调用这些工具，不要调用 `feature_dev`、`workflow`、`subagent`。Harness 的 workflow `agent()` 只接受 `label` / `phase` / `schema` / `provider` / `model`，多传选项会整段脚本失败（`UNSUPPORTED_OPTION`），所以这是提示契约，不是 `tools.restrict`。
+
+磁盘上还没有 `implementTools` 字段的旧运行保持不限制，避免改到进行中的实现。插件配置可以换名单或关掉：
+
+```yaml
+- id: feature-dev-suite-plugin
+  name: dsh-feature-dev-suite
+  config:
+    implementTools: false          # 不限制，等同 0.1.2 之前的运行
+    # implementTools: [read, edit, bash]
+```
+
+`feature_dev` start 也可以带 `implementTools` 字符串数组，只作用于这一次运行。阶段板会显示已经写入的名单。
 
 浏览器包是预构建的 `lib/client.js`，安装不需要 `allowBuilds`。
 
@@ -194,7 +212,7 @@ Desktop / Web 左侧栏有一行 **功能开发 / Feature Dev**（`sidebar.panel
 
 ```sh
 node ./scripts/build.mjs          # 生成 lib/index.js 与 lib/client.js（预构建，安装无需 allowBuilds）
-npm pack                          # 得到 dsh-feature-dev-suite-0.1.1.tgz
+npm pack                          # 得到 dsh-feature-dev-suite-0.1.2.tgz
 # 或
 npm run pack:bundle
 ```
@@ -237,5 +255,5 @@ feature-dev-suite/
 - [x] 可安装 `dsh.bundle` + 预构建 tarball
 - [x] Desktop/Web 侧边栏阶段板（与 `feature_dev` 共用 state）
 - [x] 侧栏在没有会话 agent 时禁用执行阶段的推进，并给出可复制的 `feature_dev` 调用；已通过的门禁仍可在侧栏离开
+- [x] 新运行的实现阶段带默认工具名单（提示契约；`implementTools: false` 可关掉）。workflow `agent()` 仍不能做运行时 toolFilter
 - [ ] 侧栏直接执行阶段（需要 live Agent；不能向别的会话借用）
-- [ ] 实现阶段更细的工具白名单 / preset

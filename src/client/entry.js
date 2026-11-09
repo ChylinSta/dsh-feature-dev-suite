@@ -40,6 +40,7 @@ const en = {
   'action.cancel': 'Cancel',
   'action.confirmReject': 'Reject stage',
   'field.description': 'Feature summary',
+  'field.example': 'Compare two folders and show which files differ',
   'field.runId': 'Run id',
   'field.risks': 'Risk tags',
   'field.note': 'Approval note (optional)',
@@ -60,13 +61,18 @@ const en = {
   'gate.design_review': 'Design review is waiting for a decision. Read 02-design-review.md, then Approve or Reject here. Advance stays off until you approve.',
   'gate.human_diff': 'Human diff is waiting for a decision. Read 06-summary.md and 06-full.diff, then Approve or Reject here.',
   'gate.approved': 'Approved. Advance here only leaves the gate. It does not execute the next stage.',
+  'gate.approvedNext': 'Approved. Advance here only leaves this gate and makes {stage} active. It does not execute {stage}. After the board shows {stage} active, one feature_dev advance in chat executes {stage}.',
+  'gate.approvedDone': 'Approved. Advance here only leaves this gate and marks the run done. It does not execute another stage.',
   'advance.needsAgent': 'Executing a stage needs feature_dev advance in a chat session. This panel can start, approve, reject, and leave an approved gate.',
-  'next.execute_in_chat': 'Next: run this stage in chat. Advance stays off — this panel has no session agent, so it cannot start workflowEngine.',
+  'next.execute_in_chat': 'Next: one feature_dev advance in chat executes this stage. Advance stays off here — this panel has no session agent, so it cannot start workflowEngine.',
+  'next.executeAfterGate': '{stage} is active. Leaving {gate} did not execute it. The next feature_dev advance in chat is the one that executes {stage}. Advance stays off here.',
   'next.retry_in_chat': 'This stage failed. Copy the chat call and run feature_dev advance again. Advance stays off here.',
   'next.done': 'This run is done. The artifacts stay in the folder below.',
   'next.advanceDisabled': 'Running a stage needs feature_dev advance in chat. Advance here only leaves a gate you already approved.',
   'board.shared': 'Same folder as feature_dev in chat. Refresh after chat runs a stage.',
   'start.help': 'Start only creates the run and a placeholder file. It does not execute requirements.',
+  'implement.tools': 'Implement may call only',
+  'implement.unrestricted': 'This run does not limit tools on the implement stage.',
   'chat.label': 'Chat call',
   'chat.help': 'Paste this into a chat in this workspace. The model should call feature_dev advance with this run id and then stop.',
   'chat.copy': 'Copy',
@@ -102,6 +108,7 @@ const zh = {
   'action.cancel': '取消',
   'action.confirmReject': '确认驳回',
   'field.description': '功能说明',
+  'field.example': '比较两个文件夹，标出哪些文件不同',
   'field.runId': '运行 ID',
   'field.risks': '风险标签',
   'field.note': '通过备注（可选）',
@@ -122,13 +129,18 @@ const zh = {
   'gate.design_review': '方案讨论正在等你决定。先看 02-design-review.md，再在这里通过或驳回。未通过前不能推进。',
   'gate.human_diff': '合入前人工 diff 正在等你决定。先看 06-summary.md 和 06-full.diff，再在这里通过或驳回。',
   'gate.approved': '已通过。这里的推进只离开门禁，不会执行下一阶段。',
+  'gate.approvedNext': '已通过。这里的推进只离开本门禁，并把 {stage} 标成进行中。它不会执行 {stage}。阶段板显示 {stage} 进行中之后，再在聊天里调用一次 feature_dev advance，那一次才执行 {stage}。',
+  'gate.approvedDone': '已通过。这里的推进只离开本门禁并把运行标成完成，不会再执行别的阶段。',
   'advance.needsAgent': '执行阶段需要在聊天里调用 feature_dev advance。这里可以开始、通过、驳回，以及离开已通过的门禁。',
-  'next.execute_in_chat': '下一步在聊天里执行当前阶段。这里的「推进」保持禁用：侧栏没有会话 agent，不能启动 workflowEngine。',
+  'next.execute_in_chat': '下一步：在聊天里调用一次 feature_dev advance 才会执行当前阶段。这里的推进保持禁用，侧栏没有会话 agent，不能启动 workflowEngine。',
+  'next.executeAfterGate': '{stage} 已是进行中。离开 {gate} 的那一次推进没有执行它。聊天里的下一次 feature_dev advance 才会执行 {stage}。这里的推进保持禁用。',
   'next.retry_in_chat': '当前阶段失败了。复制下面的调用，在聊天里再次 feature_dev advance。这里不能重试。',
   'next.done': '这条运行已经完成。产物还在下面的目录里。',
   'next.advanceDisabled': '执行阶段要在聊天里调用 feature_dev advance。这里的推进只离开已经通过的门禁。',
   'board.shared': '和聊天里的 feature_dev 读同一份 .feature-dev 目录。聊天执行完阶段后点刷新。',
   'start.help': '开始只会创建运行和占位文件，不会执行「需求理解」。',
+  'implement.tools': '实现阶段只能调用',
+  'implement.unrestricted': '这条运行没有限制实现阶段的工具。',
   'chat.label': '聊天调用',
   'chat.help': '粘贴到本工作区的聊天里。模型应调用 feature_dev advance，使用这个 runId，然后停下来。',
   'chat.copy': '复制',
@@ -369,15 +381,42 @@ async function request(path, init) {
   return body
 }
 
+function stageAfter(run) {
+  const stages = run && run.stages || []
+  const index = stages.findIndex(stage => stage.id === run.current)
+  if (index < 0 || index >= stages.length - 1) return null
+  const next = stages[index + 1]
+  return next ? next.id : null
+}
+
+function previousGate(run) {
+  const stages = run && run.stages || []
+  const index = stages.findIndex(stage => stage.id === run.current)
+  if (index <= 0) return null
+  const previous = stages[index - 1]
+  if (previous && previous.humanGate && previous.status === 'done') return previous.id
+  return null
+}
+
+function fill(template, values) {
+  return Object.keys(values).reduce((text, key) => text.split(`{${key}}`).join(values[key]), template)
+}
+
 function nextMessage(run, t) {
   const code = run && run.next && run.next.code
   if (code === 'await_decision') {
     const gate = (run.gate || (run.next && run.next.gate)) || 'design_review'
     return t(`gate.${gate}`)
   }
-  if (code === 'leave_gate') return t('gate.approved')
+  if (code === 'leave_gate') {
+    const nxt = stageAfter(run)
+    if (!nxt || nxt === 'done') return t('gate.approvedDone')
+    return fill(t('gate.approvedNext'), { stage: nxt })
+  }
   if (code === 'retry_in_chat') return t('next.retry_in_chat')
   if (code === 'done') return t('next.done')
+  const gate = previousGate(run)
+  if (gate) return fill(t('next.executeAfterGate'), { stage: run.current, gate })
   return t('next.execute_in_chat')
 }
 
@@ -554,6 +593,7 @@ function FeatureDevPanel(props) {
         h('textarea', {
           rows: 4,
           required: true,
+          placeholder: t('field.example'),
           value: description,
           onChange: (event) => setDescription(event.target.value),
         }),
@@ -629,6 +669,11 @@ function FeatureDevPanel(props) {
             run.adversarialCode ? t('field.adversarialCode') : null,
             (run.risks || []).join(', '),
           ].filter(Boolean).join(' · ') || t('adversarial.off')),
+          run.implementTools && run.implementTools.length
+            ? h('p', { className: 'fdv-muted' }, `${t('implement.tools')}: ${run.implementTools.join(', ')}`)
+            : run.current === 'implement'
+              ? h('p', { className: 'fdv-muted' }, t('implement.unrestricted'))
+              : null,
           run.execution && run.execution.engine === false ? h('p', { className: 'fdv-muted' }, t('empty.engineOff')) : null,
           h('div', { className: 'fdv-banner', role: 'status' }, nextMessage(run, t)),
           showChat ? h('div', { className: 'fdv-field' },
