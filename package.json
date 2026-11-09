@@ -1,7 +1,7 @@
 {
   "name": "dsh-feature-dev-suite",
   "description": "Gated feature-development workflow: requirements → design review → tests → implement → verify → human diff",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "main": "lib/index.js",
   "exports": {

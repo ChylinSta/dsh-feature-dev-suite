@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "功能开发",
-    "description": "左侧栏的功能开发阶段板：从需求到人工差异，可开始、推进、通过和驳回。feature_dev 工具读取同一份 .feature-dev 目录。"
+    "description": "左侧栏的功能开发阶段板。开始、通过、驳回，以及离开已通过的门禁在这里完成。执行阶段仍在 feature_dev 聊天工具里，它读取同一份 .feature-dev 目录。"
   }
 }

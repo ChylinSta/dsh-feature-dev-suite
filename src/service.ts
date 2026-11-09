@@ -3,18 +3,28 @@ import { runFeatureDev } from "./actions.js";
 import type { FeatureDevArgs } from "./actions.js";
 import type { WorkflowEngine } from "./runner.js";
 import { listRunStates, readState } from "./state.js";
+import type { RunState } from "./state.js";
 import { presentRun } from "./view.js";
 import type { RunView } from "./view.js";
 
 export interface ActionOutcome {
   message: string;
   run: RunView | null;
+  code: string;
+  applied: boolean;
+}
+
+export interface HostExecution {
+  session: boolean;
+  engine: boolean;
 }
 
 export interface FeatureApi {
   root: string;
+  execution: HostExecution;
   listRuns(): RunView[];
   getStatus(runId: string): RunView;
+  present(state: RunState): RunView;
   start(input: {
     featureSummary?: unknown;
     risks?: unknown;
@@ -41,23 +51,35 @@ export function createFeatureApi(options: {
   signal?: AbortSignal;
 }): FeatureApi {
   const root = options.root;
+  const execution: HostExecution = {
+    session: Boolean(options.agent),
+    engine: Boolean(options.engine),
+  };
+
+  function present(state: RunState): RunView {
+    return presentRun(state, execution);
+  }
 
   async function act(args: FeatureDevArgs): Promise<ActionOutcome> {
     const result = await runFeatureDev(options.engine, { ...args, workspaceRoot: root }, options.agent, options.signal);
     return {
       message: result.text,
-      run: result.state ? presentRun(result.state) : null,
+      run: result.state ? present(result.state) : null,
+      code: result.code,
+      applied: result.applied,
     };
   }
 
   return {
     root,
+    execution,
     listRuns() {
-      return listRunStates(root).map(presentRun);
+      return listRunStates(root).map(present);
     },
     getStatus(runId: string) {
-      return presentRun(readState(root, runId));
+      return present(readState(root, runId));
     },
+    present,
     start(input) {
       return act({
         action: "start",

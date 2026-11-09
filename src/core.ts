@@ -1,5 +1,7 @@
 /** Test and tooling entry. The host plugin bundle is src/index.ts. */
 export { runFeatureDev } from "./actions.js";
+export { FeatureDevError } from "./errors.js";
+export { nextStep } from "./guidance.js";
 export { makeFeatureDevRoutes } from "./routes.js";
 export { createFeatureApi, resolveRoot } from "./service.js";
 export { isDesktopShellRequest, isLoopbackAddress, isTrustedRequest } from "./http.js";
