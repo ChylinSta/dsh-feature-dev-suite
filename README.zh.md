@@ -33,25 +33,25 @@ Desktop 的插件管理与 Web 共用同一套 Host API（侧栏 **插件** / �
 仓库里打好的包（或你本地执行 `npm run pack:bundle` 生成）：
 
 ```text
-dsh-feature-dev-suite-0.1.2.tgz
+dsh-feature-dev-suite-0.1.3.tgz
 ```
 
 在 **添加插件** 对话框里填该 `.tgz` 的**绝对路径**，或在已安装 Desktop 自带的 `dsh` CLI 里：
 
 ```sh
-dsh plugin --profile desktop add /绝对路径/dsh-feature-dev-suite-0.1.2.tgz
+dsh plugin --profile desktop add /绝对路径/dsh-feature-dev-suite-0.1.3.tgz
 ```
 
-### 更新已经装过的版本（0.1.0 → 0.1.2）
+### 更新已经装过的版本（0.1.2 → 0.1.3）
 
 本包的 Host 和侧栏都是预构建的 `lib/index.js`、`lib/client.js`。**不要**把 `dsh-feature-dev-suite` 写进 `allowBuilds`。若安装器要求编译本包，说明 tarball 里缺了 `lib/client.js`，不要改用源码安装来绕过。
 
-1. 在本目录执行 `npm run pack:bundle`，得到 `dsh-feature-dev-suite-0.1.2.tgz`
+1. 在本目录执行 `npm run pack:bundle`，得到 `dsh-feature-dev-suite-0.1.3.tgz`
 2. **完全退出** Desktop，再改它的 profile
 3. 用 Desktop「管理 dsh 命令…」装上的那份 `dsh`（不是 npm 全局的 `dsh`）：
 
    ```sh
-   dsh plugin --profile desktop add /绝对路径/dsh-feature-dev-suite-0.1.2.tgz
+   dsh plugin --profile desktop add /绝对路径/dsh-feature-dev-suite-0.1.3.tgz
    ```
 
    若同名包已在 profile 里、add 没有换成新 tarball，先 `dsh plugin --profile desktop remove dsh-feature-dev-suite`，再 add。侧栏插件管理里也可以先移除再填新 tarball 的绝对路径。
@@ -68,7 +68,7 @@ dsh plugin --profile desktop add /绝对路径/dsh-feature-dev-suite-0.1.2.tgz
 pnpm dsh plugin --profile web add ./feature-dev-suite
 # 或
 dsh plugin --profile web add /绝对路径/feature-dev-suite
-dsh plugin --profile web add /绝对路径/dsh-feature-dev-suite-0.1.2.tgz
+dsh plugin --profile web add /绝对路径/dsh-feature-dev-suite-0.1.3.tgz
 ```
 
 验证层是否挂上：
@@ -160,7 +160,11 @@ Desktop / Web 左侧栏有一行 **功能开发 / Feature Dev**（`sidebar.panel
 | 验证 | `05-verify.md` | |
 | 合入前 | `06-full.diff` + `06-summary.md` | **人 approve** |
 
-高风险可在 start 时带风险标签，或 `adversarialDesign` / `adversarialCode` = true，会多走对抗深评。
+高风险可在 start 时带风险标签，或 `adversarialDesign` / `adversarialCode` = true，会多走对抗深评，并多出 `03b-adversarial-design.md` 与 `04b-adversarial-code.md`。
+
+`feature_dev` status 的 `expected:` 段，以及阶段板上的产物列表，会给每个应有文件标上 `present`（已写正文）、`placeholder`（仍是骨架，正文含 `(skeleton placeholder)`）或 `missing`（目录里没有）。`06-full.diff` 不会被写成骨架，没人放 diff 之前一直是 missing。
+
+不能调用 advance 时（侧栏不能执行阶段，或换了一个只会改文件的 agent），按 [docs/feature-dev-offline.md](./docs/feature-dev-offline.md) 手写同一套文件。FolderDiff 走的就是这条：requirements → design → 用一段豁免说明代替 design_review → testcases → implement → verify → human_diff。目录名要用 `fd-` 开头，例如 `fd-folder-diff-v1`，阶段板才会把它列出来。`folder-diff-v1` 这种不带 `fd-` 的目录不会出现在侧栏。
 
 ---
 
@@ -212,12 +216,12 @@ Desktop / Web 左侧栏有一行 **功能开发 / Feature Dev**（`sidebar.panel
 
 ```sh
 node ./scripts/build.mjs          # 生成 lib/index.js 与 lib/client.js（预构建，安装无需 allowBuilds）
-npm pack                          # 得到 dsh-feature-dev-suite-0.1.2.tgz
+npm pack                          # 得到 dsh-feature-dev-suite-0.1.3.tgz
 # 或
 npm run pack:bundle
 ```
 
-`files` 字段打出：`lib/index.js`、`lib/client.js`、`cordis.patch.yml`、`prompts/`、`locale/`、`icon.svg`、README。不要把 `node_modules` 或 `src/` 打进去。安装不需要 `allowBuilds`。
+`files` 字段打出：`lib/index.js`、`lib/client.js`、`cordis.patch.yml`、`prompts/`、`docs/`、`locale/`、`icon.svg`、README。不要把 `node_modules` 或 `src/` 打进去。安装不需要 `allowBuilds`。
 
 开发时若只想 `--patch` 试跑、不装进 profile：
 
@@ -256,4 +260,5 @@ feature-dev-suite/
 - [x] Desktop/Web 侧边栏阶段板（与 `feature_dev` 共用 state）
 - [x] 侧栏在没有会话 agent 时禁用执行阶段的推进，并给出可复制的 `feature_dev` 调用；已通过的门禁仍可在侧栏离开
 - [x] 新运行的实现阶段带默认工具名单（提示契约；`implementTools: false` 可关掉）。workflow `agent()` 仍不能做运行时 toolFilter
+- [x] `expected:` 清单标出每个阶段文件是 present、placeholder 还是 missing；离线写法见 `docs/feature-dev-offline.md`
 - [ ] 侧栏直接执行阶段（需要 live Agent；不能向别的会话借用）

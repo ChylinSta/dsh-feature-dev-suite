@@ -4,6 +4,7 @@
  * Returned text matches the tool's previous messages.
  */
 
+import { formatArtifactChecklist, listExpectedArtifacts } from "./artifacts.js";
 import { FeatureDevError } from "./errors.js";
 import { chatAdvanceCall, expectedArtifact, followingStage, nextHint, nextStep } from "./guidance.js";
 import { implementToolLine, resolveImplementTools } from "./implement-tools.js";
@@ -59,6 +60,8 @@ function summarize(state: RunState, context: { session: boolean; engine: boolean
   }
   const expected = expectedArtifact(state);
   if (expected) lines.push(`artifact: ${expected.relativePath}`);
+  lines.push("expected:");
+  lines.push(...formatArtifactChecklist(listExpectedArtifacts(state)));
   const def = STAGE_DEFS.find((s) => s.id === state.current);
   if (def?.humanGate && state.statusByStage[state.current] === "blocked") {
     lines.push(`gate: waiting for human approve/reject on ${state.current}`);

@@ -1,5 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
+import { listExpectedArtifacts, stageIdForArtifact } from "./artifacts.js";
+import type { ExpectedArtifact } from "./artifacts.js";
 import { expectedArtifact, nextHint, nextStep, sidebarCanAdvance, chatAdvanceCall } from "./guidance.js";
 import type { ChatCall, ExecutionContext, NextCode } from "./guidance.js";
 import { STAGE_DEFS } from "./phases.js";
@@ -53,21 +55,19 @@ export interface RunView {
   expectedFile: string | null;
   expectedRelative: string | null;
   artifactFiles: ArtifactFileView[];
+  /** Every file this run's stage list expects, including ones not written yet. */
+  expectedArtifacts: ExpectedArtifact[];
   /** `null` when this run does not constrain the implement stage. */
   implementTools: string[] | null;
 }
-
-const ARTIFACT_STAGE = new Map(
-  STAGE_DEFS.flatMap((stage) => stage.artifact ? [[stage.artifact, stage.id] as const] : []),
-);
 
 function isPlaceholder(file: string): boolean {
   let fd: number | undefined;
   try {
     fd = fs.openSync(file, "r");
     const buffer = Buffer.alloc(512);
-    const n = fs.readSync(fd, buffer, 0, buffer.length, 0);
-    return buffer.toString("utf8", 0, n).includes("(skeleton placeholder)");
+    const read = fs.readSync(fd, buffer, 0, buffer.length, 0);
+    return buffer.toString("utf8", 0, read).includes("(skeleton placeholder)");
   } catch {
     return false;
   } finally {
@@ -133,10 +133,11 @@ export function presentRun(state: RunState, context: Partial<ExecutionContext> =
     implementTools: Array.isArray(state.implementTools) ? [...state.implementTools] : null,
     expectedFile: expected?.file ?? null,
     expectedRelative: expected?.relativePath ?? null,
+    expectedArtifacts: listExpectedArtifacts(state),
     artifactFiles: visible.map((name) => ({
       name,
       relativePath: `.feature-dev/${state.runId}/${name}`,
-      stageId: ARTIFACT_STAGE.get(name) ?? null,
+      stageId: stageIdForArtifact(name),
       placeholder: isPlaceholder(path.join(dir, name)),
     })),
   };

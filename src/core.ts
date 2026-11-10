@@ -1,4 +1,5 @@
 /** Test and tooling entry. The host plugin bundle is src/index.ts. */
+export { formatArtifactChecklist, listExpectedArtifacts } from "./artifacts.js";
 export { runFeatureDev } from "./actions.js";
 export { FeatureDevError } from "./errors.js";
 export { nextStep } from "./guidance.js";
