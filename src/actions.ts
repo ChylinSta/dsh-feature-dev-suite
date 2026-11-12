@@ -4,15 +4,16 @@
  * Returned text matches the tool's previous messages.
  */
 
-import { formatArtifactChecklist, listExpectedArtifacts } from "./artifacts.js";
+import { formatArtifactChecklist, formatPlatformNote, listExpectedArtifacts, platformAttention } from "./artifacts.js";
 import { FeatureDevError } from "./errors.js";
 import { chatAdvanceCall, expectedArtifact, followingStage, nextHint, nextStep } from "./guidance.js";
 import { implementToolLine, resolveImplementTools } from "./implement-tools.js";
+import { adoptRun, formatRunList, listRunStates, openRun, startIterate } from "./offline.js";
 import { STAGE_DEFS } from "./phases.js";
 import { executeStage } from "./runner.js";
 import type { WorkflowEngine } from "./runner.js";
-import { createRun, nextStage, readState, runDir, writeState } from "./state.js";
-import type { RunState } from "./state.js";
+import { createRun, inIterateLoop, nextStage, runDir, writeState } from "./state.js";
+import type { IterateStage, RunState } from "./state.js";
 
 export interface FeatureDevArgs {
   action: string;
@@ -25,6 +26,8 @@ export interface FeatureDevArgs {
   reason?: string;
   /** Present only on start. `false` leaves implement unrestricted. */
   implementTools?: string[] | false;
+  /** Scope of an `iterate` increment. `reason` is used when this is omitted. */
+  scope?: string;
 }
 
 export interface FeatureDevDefaults {
@@ -58,6 +61,12 @@ function summarize(state: RunState, context: { session: boolean; engine: boolean
   if (step.code === "execute_in_chat" || step.code === "retry_in_chat") {
     lines.push(`chat: ${chatAdvanceCall(state).text}`);
   }
+  if ((state.iterate ?? 0) > 0) {
+    lines.push(`iterate: ${state.iterate}`);
+    lines.push(`iterateStage: ${state.iterateStage ?? state.current}`);
+  }
+  const platform = platformAttention(runDir(state.workspaceRoot, state.runId));
+  if (platform) lines.push(`platform: ${formatPlatformNote(platform)}`);
   const expected = expectedArtifact(state);
   if (expected) lines.push(`artifact: ${expected.relativePath}`);
   lines.push("expected:");
@@ -73,13 +82,28 @@ function summarize(state: RunState, context: { session: boolean; engine: boolean
   return lines.join("\n");
 }
 
+function syncIterateStage(state: RunState, stage: string): void {
+  if ((state.iterate ?? 0) < 1) return;
+  if (stage === "implement" || stage === "verify" || stage === "human_diff" || stage === "done") {
+    state.iterateStage = stage;
+  }
+}
+
 function moveTo(state: RunState, nxt: string): void {
   state.current = nxt;
+  syncIterateStage(state, nxt);
   const nxtDef = STAGE_DEFS.find((s) => s.id === nxt);
   state.statusByStage[nxt] = nxt === "done" ? "done" : "active";
   if (nxtDef?.humanGate && nxt !== "done") {
     state.statusByStage[nxt] = "active";
   }
+}
+
+function previousIterateStage(current: string): IterateStage {
+  const loop: IterateStage[] = ["implement", "verify", "human_diff"];
+  const index = loop.indexOf(current as IterateStage);
+  if (index <= 0) return "implement";
+  return loop[index - 1]!;
 }
 
 export async function runFeatureDev(
@@ -115,11 +139,31 @@ export async function runFeatureDev(
     });
     return reply(`Started feature-dev run.\n${summarize(state, caller)}`, state, "started", true);
   }
+  if (args.action === "list") {
+    const runs = listRunStates(workspaceRoot);
+    return reply(formatRunList(runs), null, "list", false);
+  }
   if (!args.runId?.trim()) {
     throw new FeatureDevError("runId is required", { code: "run_id_required", status: 400 });
   }
-  const state = readState(workspaceRoot, args.runId.trim());
+  const runId = args.runId.trim();
+  if (args.action === "adopt") {
+    const adopted = adoptRun(workspaceRoot, runId, args.featureSummary);
+    const lead = adopted.created ? `Adopted ${adopted.state.runId}.` : `Already tracking ${adopted.state.runId}.`;
+    return reply(`${lead}\n${summarize(adopted.state, caller)}`, adopted.state, adopted.created ? "adopted" : "already_tracking", adopted.created);
+  }
+  const state = openRun(workspaceRoot, runId);
   state.workspaceRoot = state.workspaceRoot || workspaceRoot;
+  if (args.action === "iterate") {
+    const scope = args.scope?.trim() || args.reason?.trim() || "";
+    const next = startIterate(state, scope);
+    return reply(
+      `Started iterate ${next.iterate}. Reuse the existing requirements and design. Loop: implement → verify → human_diff.\n${summarize(next, caller)}`,
+      next,
+      "iterated",
+      true,
+    );
+  }
   if (args.action === "status") {
     return reply(summarize(state, caller), state, "status", false);
   }
@@ -152,11 +196,13 @@ export async function runFeatureDev(
     if (!def?.humanGate) {
       throw new FeatureDevError(`current stage ${cur} is not a human gate`, { code: "not_a_gate", status: 400, state });
     }
-    const i = state.stages.indexOf(cur);
-    const back = i > 0 ? state.stages[i - 1]! : cur;
+    const back = inIterateLoop(state)
+      ? previousIterateStage(cur)
+      : (state.stages.indexOf(cur) > 0 ? state.stages[state.stages.indexOf(cur) - 1]! : cur);
     state.statusByStage[cur] = "pending";
     state.statusByStage[back] = "active";
     state.current = back;
+    syncIterateStage(state, back);
     state.notes.push(`rejected ${cur} → back to ${back}: ${args.reason?.trim() || "(no reason)"}`);
     writeState(state);
     return reply(`Rejected ${cur}, returned to ${back}.\n${summarize(state, caller)}`, state, "rejected", true);
@@ -175,6 +221,7 @@ export async function runFeatureDev(
         state.current = "done";
         state.statusByStage[cur] = "done";
         state.statusByStage.done = "done";
+        syncIterateStage(state, "done");
         writeState(state);
         return reply(
           `Left approved gate ${cur} → done. This advance finished the pipeline. It did not execute another stage.\n${summarize(state, caller)}`,
@@ -239,6 +286,7 @@ export async function runFeatureDev(
     if (!nxt) {
       state.current = "done";
       state.statusByStage.done = "done";
+      syncIterateStage(state, "done");
       writeState(state);
       return reply(`Stage ${cur} done → pipeline complete.\n${summarize(state, caller)}`, state, "executed", true);
     }

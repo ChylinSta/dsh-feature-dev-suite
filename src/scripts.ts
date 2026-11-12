@@ -8,6 +8,9 @@ export interface StageScriptArgs {
   deep: boolean;
   /** `null` keeps the historical unrestricted implement prompt. */
   implementTools: string[] | null;
+  /** Set while an increment is open. The fresh-run prompt stays unchanged. */
+  iterate?: number;
+  iterateBrief?: string;
 }
 
 export interface StageScript {
@@ -27,6 +30,12 @@ function implementAllowlistLine(tools: string[] | null): string {
   if (!tools || tools.length === 0) return "";
   const sentence = `Tool allowlist: call only these tools: ${tools.join(", ")}. Do not call feature_dev, workflow, subagent, or any tool not in that list. If something you need is missing, name it under ## Remaining work and stop.`;
   return `${JSON.stringify(sentence)},\n  `;
+}
+
+function iteratePrompt(args: StageScriptArgs): string {
+  if (!args.iterate || args.iterate < 1) return "";
+  const line = `This is increment ${args.iterate}. Reuse the existing requirements and design. Do not start a new requirements, design, or design_review cycle. Stay on implement, then verify, then human_diff. Record this increment in iterate-${args.iterate}.md.`;
+  return `${JSON.stringify(line)},\n  'Increment brief:', ${j(args.iterateBrief ?? "")},\n  '',\n  `;
 }
 export function buildStageScript(stage: string, args: StageScriptArgs): StageScript | null {
   const commonArgs = `const featureSummary = ${j(args.featureSummary)}
@@ -234,7 +243,7 @@ const text = await agent([
   'Follow repository conventions. Prefer small slices. Update/add tests when appropriate.',
   'When finished, return Markdown notes: ## Changes ## Commands run ## Remaining work',
   ${implementAllowlistLine(args.implementTools)}'',
-  'Requirements:', requirements || '(missing)',
+  ${iteratePrompt(args)}'Requirements:', requirements || '(missing)',
   '',
   'Design:', design || '(missing)',
   '',
@@ -274,7 +283,8 @@ const text = await agent([
   'Run the repository build/test/pack commands appropriate for this workspace.',
   'Return Markdown: ## Commands ## Results ## Failures ## Artifacts',
   'Do not claim success without command evidence.',
-  'Impl notes:', implNotes || '(none)',
+  'Record each target platform on its own line, such as platform: linux verified or platform: windows unconfirmed. An unconfirmed platform is a visible note and does not fail this stage.',
+  ${iteratePrompt(args)}'Impl notes:', implNotes || '(none)',
 ].join('\\n'), { label: 'verifier' })
 if (!text) throw new Error('verify agent failed')
 return { artifact: text }
@@ -293,7 +303,7 @@ const text = await agent([
   'Prepare a merge gate packet.',
   'Produce Markdown summary: ## Intent ## Key changes ## Risks ## Test evidence ## Review checklist',
   'Also include a fenced diff block if you can obtain git diff; otherwise explain how to obtain it.',
-  'Impl notes:', implNotes || '(none)',
+  ${iteratePrompt(args)}'Impl notes:', implNotes || '(none)',
   'Verify:', '(see 05-verify.md on disk if present)',
 ].join('\\n'), { label: 'diff-summarizer' })
 return { artifact: text || '# human diff\\n\\n(missing summary)', diff: null }

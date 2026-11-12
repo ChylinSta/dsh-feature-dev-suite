@@ -5,6 +5,7 @@
  */
 
 import { STAGE_DEFS } from "./phases.js";
+import { nextStage } from "./state.js";
 import type { RunState } from "./state.js";
 
 export type NextCode = "execute_in_chat" | "retry_in_chat" | "await_decision" | "leave_gate" | "done";
@@ -51,9 +52,7 @@ export function sidebarCanAdvance(step: NextStep, context: ExecutionContext): bo
 }
 
 export function followingStage(state: RunState): string | null {
-  const index = state.stages.indexOf(state.current);
-  if (index < 0 || index >= state.stages.length - 1) return null;
-  return state.stages[index + 1] ?? null;
+  return nextStage(state);
 }
 
 /** The human gate this stage became active from, when that gate is already done. */
@@ -84,6 +83,13 @@ export function chatAdvanceCall(state: RunState): ChatCall {
 }
 
 export function expectedArtifact(state: RunState): { file: string; relativePath: string } | null {
+  if ((state.iterate ?? 0) > 0 && state.iterateStage && state.iterateStage !== "done") {
+    const file = `iterate-${state.iterate}.md`;
+    return {
+      file,
+      relativePath: `.feature-dev/${state.runId}/${file}`,
+    };
+  }
   const def = STAGE_DEFS.find((item) => item.id === state.current);
   if (!def?.artifact) return null;
   return {

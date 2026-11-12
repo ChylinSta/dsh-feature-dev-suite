@@ -54,17 +54,17 @@ export function apply(ctx: HostContext, config?: { root?: string; implementTools
 
   ctx.tools.register(defineTool<FeatureDevArgs, string>({
     name: "feature_dev",
-    description: "Orchestrate a gated feature-development pipeline. The sidebar and this tool share .feature-dev/<runId>/. start, approve, and reject only update that state. advance executes the current stage through workflowEngine and requires this chat's agent — the sidebar cannot, because it has no session. After a human gate is approved, the next advance only leaves the gate and does not execute the following stage; call advance again once that stage is active. status reports next, sidebarAdvance, hint, chat, artifact, implementTools, and an expected: checklist of present, placeholder, and missing files. New runs snapshot an implement tool allowlist into the implement prompt (config implementTools, or false to opt out). The workflow engine cannot enforce that list. Stages: requirements → design → design_review (human approve) → testcases → optional adversarial reviews → implement → verify → human_diff (human approve).",
+    description: "Orchestrate a gated feature-development pipeline. The sidebar and this tool share .feature-dev/<runId>/. start, approve, and reject only update that state. advance executes the current stage through workflowEngine and requires this chat's agent — the sidebar cannot, because it has no session. After a human gate is approved, the next advance only leaves the gate and does not execute the following stage; call advance again once that stage is active. status reports next, sidebarAdvance, hint, chat, artifact, implementTools, iterate, an optional platform note, and an expected: checklist of present, placeholder, and missing files. list shows runs, including folders that do not start with fd- when they contain stage files. adopt creates or repairs state.json from those files without overwriting them. iterate starts the next increment after human_diff is done: it opens iterate-N.md and loops implement → verify → human_diff, reusing requirements and design. A pending platform confirmation is visible and does not block the run. Unprefixed filenames such as requirements.md count as the numbered stage file. New runs snapshot an implement tool allowlist into the implement prompt (config implementTools, or false to opt out). The workflow engine cannot enforce that list. Stages: requirements → design → design_review (human approve) → testcases → optional adversarial reviews → implement → verify → human_diff (human approve).",
     parameters: {
       action: {
         type: "string",
         required: true,
-        enum: ["start", "status", "advance", "approve", "reject"],
-        description: "Pipeline action",
+        enum: ["start", "status", "list", "advance", "approve", "reject", "adopt", "iterate"],
+        description: "Pipeline action. adopt repairs state.json for an existing folder. iterate opens the next increment after human_diff. list needs no runId.",
       },
       runId: {
         type: "string",
-        description: "Existing run id from the sidebar or an earlier start (required except for start)",
+        description: "Existing run id. Required except for start and list. A folder name without the fd- prefix is valid when that folder holds stage files (folder-diff-v1).",
       },
       featureSummary: {
         type: "string",
@@ -94,7 +94,11 @@ export function apply(ctx: HostContext, config?: { root?: string; implementTools
       },
       reason: {
         type: "string",
-        description: "Reason for approve/reject",
+        description: "Reason for approve/reject. For iterate, used as the scope when scope is omitted.",
+      },
+      scope: {
+        type: "string",
+        description: "What this iterate increment will change. Leftovers are copied from the previous increment.",
       },
     },
     output: {
