@@ -8,5 +8,6 @@ export { buildStageScript } from "./scripts.js";
 export { makeFeatureDevRoutes } from "./routes.js";
 export { createFeatureApi, resolveRoot } from "./service.js";
 export { isDesktopShellRequest, isLoopbackAddress, isTrustedRequest } from "./http.js";
-export { createRun, listRunStates, readState, writeState } from "./state.js";
+export { createRun, readState, writeState } from "./state.js";
+export { listRunStates, openRun } from "./offline.js";
 export { presentRun } from "./view.js";

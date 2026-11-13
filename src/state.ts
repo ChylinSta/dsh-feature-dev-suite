@@ -1,7 +1,10 @@
 import fs from "node:fs";
 import path from "node:path";
 import { FeatureDevError } from "./errors.js";
+import { aliasesFor } from "./files.js";
 import { STAGE_DEFS, buildStageOrder } from "./phases.js";
+
+export type IterateStage = "implement" | "verify" | "human_diff" | "done";
 
 export interface RunState {
   runId: string;
@@ -22,6 +25,13 @@ export interface RunState {
    * Missing on runs started before the allowlist. `null` is an explicit opt-out.
    */
   implementTools?: string[] | null;
+  /**
+   * Increment started by `iterate`, or the latest one `adopt` inferred.
+   * Omitted on a run that has not left the original pipeline.
+   */
+  iterate?: number;
+  /** Stage inside the increment. Present only when `iterate` is set. */
+  iterateStage?: IterateStage;
 }
 
 export interface CreateRunInput {
@@ -75,9 +85,11 @@ export function writeState(state: RunState): void {
   state.updatedAt = new Date().toISOString();
   writeAtomic(statePath(state.workspaceRoot, state.runId), JSON.stringify(state, null, 2));
   const def = STAGE_DEFS.find((s) => s.id === state.current);
-  if (def?.artifact) {
+  const iterating = (state.iterate ?? 0) > 0 && state.iterateStage !== undefined && state.iterateStage !== "done";
+  if (def?.artifact && !iterating) {
     const p = path.join(dir, def.artifact);
-    if (!fs.existsSync(p)) {
+    const aliasPresent = aliasesFor(def.artifact).some((name) => fs.existsSync(path.join(dir, name)));
+    if (!fs.existsSync(p) && !aliasPresent) {
       fs.writeFileSync(
         p,
         [
@@ -118,6 +130,13 @@ function coerceRun(value: unknown, workspaceRoot: string, runId: string): RunSta
   } else if (state.implementTools != null) {
     delete state.implementTools;
   }
+  const iterateStages = new Set<IterateStage>(["implement", "verify", "human_diff", "done"]);
+  if (typeof state.iterate !== "number" || !Number.isInteger(state.iterate) || state.iterate < 1) {
+    delete state.iterate;
+    delete state.iterateStage;
+  } else if (!iterateStages.has(state.iterateStage as IterateStage)) {
+    state.iterateStage = state.current === "done" ? "done" : "implement";
+  }
   return state;
 }
 
@@ -139,42 +158,6 @@ export function readState(workspaceRoot: string, runId: string): RunState {
     throw new FeatureDevError(`Run ${runId} state is unreadable.`, { code: "unreadable_run", status: 400 });
   }
   return state;
-}
-
-const RUN_DIR_NAME = /^fd-[a-z0-9-]+$/;
-
-/** Runs stored under `<workspace>/.feature-dev`, newest first. A bad entry is skipped; it does not hide the others. */
-export function listRunStates(workspaceRoot: string): RunState[] {
-  const home = path.join(workspaceRoot, ".feature-dev");
-  let entries: fs.Dirent[];
-  try {
-    entries = fs.readdirSync(home, { withFileTypes: true });
-  } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code;
-    if (code === "ENOENT") return [];
-    if (code === "ENOTDIR") {
-      throw new FeatureDevError("`.feature-dev` is not a directory, so runs cannot be listed.", {
-        code: "runs_unreadable",
-        status: 400,
-      });
-    }
-    throw error;
-  }
-  const runs: RunState[] = [];
-  for (const entry of entries) {
-    if (!entry.isDirectory() || !RUN_DIR_NAME.test(entry.name)) continue;
-    try {
-      runs.push(readState(workspaceRoot, entry.name));
-    } catch {
-      continue;
-    }
-  }
-  runs.sort((a, b) => {
-    const byTime = (b.updatedAt || b.createdAt).localeCompare(a.updatedAt || a.createdAt);
-    if (byTime !== 0) return byTime;
-    return a.runId < b.runId ? -1 : a.runId > b.runId ? 1 : 0;
-  });
-  return runs;
 }
 
 function allocateRunId(workspaceRoot: string): string {
@@ -232,7 +215,19 @@ function stageIndex(state: RunState, id = state.current): number {
   return state.stages.indexOf(id);
 }
 
+const ITERATE_LOOP = ["implement", "verify", "human_diff", "done"];
+
+/** True while an increment is open. A finished increment uses the normal pipeline. */
+export function inIterateLoop(state: RunState): boolean {
+  return (state.iterate ?? 0) > 0 && state.iterateStage !== "done" && state.current !== "done";
+}
+
 export function nextStage(state: RunState): string | null {
+  if (inIterateLoop(state)) {
+    const i = ITERATE_LOOP.indexOf(state.current);
+    if (i < 0 || i >= ITERATE_LOOP.length - 1) return null;
+    return ITERATE_LOOP[i + 1]!;
+  }
   const i = stageIndex(state);
   if (i < 0 || i >= state.stages.length - 1) return null;
   return state.stages[i + 1]!;

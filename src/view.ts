@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
-import { listExpectedArtifacts, stageIdForArtifact } from "./artifacts.js";
-import type { ExpectedArtifact } from "./artifacts.js";
+import { listExpectedArtifacts, platformAttention, stageIdForArtifact } from "./artifacts.js";
+import type { ExpectedArtifact, PlatformAttention } from "./artifacts.js";
 import { expectedArtifact, nextHint, nextStep, sidebarCanAdvance, chatAdvanceCall } from "./guidance.js";
 import type { ChatCall, ExecutionContext, NextCode } from "./guidance.js";
 import { STAGE_DEFS } from "./phases.js";
@@ -59,6 +59,11 @@ export interface RunView {
   expectedArtifacts: ExpectedArtifact[];
   /** `null` when this run does not constrain the implement stage. */
   implementTools: string[] | null;
+  /** Latest increment, or null when this run has not iterated. */
+  iterate: number | null;
+  iterateStage: string | null;
+  /** Set when verify still names an unconfirmed target platform. Never a gate. */
+  platform: PlatformAttention | null;
 }
 
 function isPlaceholder(file: string): boolean {
@@ -131,6 +136,9 @@ export function presentRun(state: RunState, context: Partial<ExecutionContext> =
     },
     chatCall: wantsChat ? chatAdvanceCall(state) : null,
     implementTools: Array.isArray(state.implementTools) ? [...state.implementTools] : null,
+    iterate: (state.iterate ?? 0) > 0 ? state.iterate ?? null : null,
+    iterateStage: (state.iterate ?? 0) > 0 ? state.iterateStage ?? null : null,
+    platform: platformAttention(dir),
     expectedFile: expected?.file ?? null,
     expectedRelative: expected?.relativePath ?? null,
     expectedArtifacts: listExpectedArtifacts(state),

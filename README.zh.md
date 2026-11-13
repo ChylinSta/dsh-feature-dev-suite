@@ -33,25 +33,25 @@ Desktop 的插件管理与 Web 共用同一套 Host API（侧栏 **插件** / �
 仓库里打好的包（或你本地执行 `npm run pack:bundle` 生成）：
 
 ```text
-dsh-feature-dev-suite-0.1.3.tgz
+dsh-feature-dev-suite-0.1.4.tgz
 ```
 
 在 **添加插件** 对话框里填该 `.tgz` 的**绝对路径**，或在已安装 Desktop 自带的 `dsh` CLI 里：
 
 ```sh
-dsh plugin --profile desktop add /绝对路径/dsh-feature-dev-suite-0.1.3.tgz
+dsh plugin --profile desktop add /绝对路径/dsh-feature-dev-suite-0.1.4.tgz
 ```
 
-### 更新已经装过的版本（0.1.2 → 0.1.3）
+### 更新已经装过的版本（0.1.3 → 0.1.4）
 
 本包的 Host 和侧栏都是预构建的 `lib/index.js`、`lib/client.js`。**不要**把 `dsh-feature-dev-suite` 写进 `allowBuilds`。若安装器要求编译本包，说明 tarball 里缺了 `lib/client.js`，不要改用源码安装来绕过。
 
-1. 在本目录执行 `npm run pack:bundle`，得到 `dsh-feature-dev-suite-0.1.3.tgz`
+1. 在本目录执行 `npm run pack:bundle`，得到 `dsh-feature-dev-suite-0.1.4.tgz`
 2. **完全退出** Desktop，再改它的 profile
 3. 用 Desktop「管理 dsh 命令…」装上的那份 `dsh`（不是 npm 全局的 `dsh`）：
 
    ```sh
-   dsh plugin --profile desktop add /绝对路径/dsh-feature-dev-suite-0.1.3.tgz
+   dsh plugin --profile desktop add /绝对路径/dsh-feature-dev-suite-0.1.4.tgz
    ```
 
    若同名包已在 profile 里、add 没有换成新 tarball，先 `dsh plugin --profile desktop remove dsh-feature-dev-suite`，再 add。侧栏插件管理里也可以先移除再填新 tarball 的绝对路径。
@@ -68,7 +68,7 @@ dsh plugin --profile desktop add /绝对路径/dsh-feature-dev-suite-0.1.3.tgz
 pnpm dsh plugin --profile web add ./feature-dev-suite
 # 或
 dsh plugin --profile web add /绝对路径/feature-dev-suite
-dsh plugin --profile web add /绝对路径/dsh-feature-dev-suite-0.1.3.tgz
+dsh plugin --profile web add /绝对路径/dsh-feature-dev-suite-0.1.4.tgz
 ```
 
 验证层是否挂上：
@@ -164,7 +164,15 @@ Desktop / Web 左侧栏有一行 **功能开发 / Feature Dev**（`sidebar.panel
 
 `feature_dev` status 的 `expected:` 段，以及阶段板上的产物列表，会给每个应有文件标上 `present`（已写正文）、`placeholder`（仍是骨架，正文含 `(skeleton placeholder)`）或 `missing`（目录里没有）。`06-full.diff` 不会被写成骨架，没人放 diff 之前一直是 missing。
 
-不能调用 advance 时（侧栏不能执行阶段，或换了一个只会改文件的 agent），按 [docs/feature-dev-offline.md](./docs/feature-dev-offline.md) 手写同一套文件。FolderDiff 走的就是这条：requirements → design → 用一段豁免说明代替 design_review → testcases → implement → verify → human_diff。目录名要用 `fd-` 开头，例如 `fd-folder-diff-v1`，阶段板才会把它列出来。`folder-diff-v1` 这种不带 `fd-` 的目录不会出现在侧栏。
+不能调用 advance 时（侧栏不能执行阶段，或换了一个只会改文件的 agent），按 [docs/feature-dev-offline.md](./docs/feature-dev-offline.md) 手写同一套文件。FolderDiff 走的就是这条：requirements → design → 用一段豁免说明代替 design_review → testcases → implement → verify → human_diff，之后又写了 `iterate-1.md`、`iterate-2.md`、`iterate-3.md`。
+
+`start` 仍会创建 `fd-` 前缀的目录，例如 `fd-folder-diff-v1`。没有这个前缀也可以：`.feature-dev/folder-diff-v1/` 里只要有阶段文件，阶段板和 `feature_dev list` 就会列出它。`requirements.md` 等同 `01-requirements.md`，`design.md`、`design_review.md`、`testcases.md`、`verify.md`、`human_diff.md` 以及实现笔记也一样。两份都在时，清单以带编号的那份为准。
+
+`feature_dev adopt` 根据这些文件补上或修好 `state.json`，不覆盖已经写好的正文。书面豁免（waived / waiver / 豁免）算 `design_review` 完成。已经有 `iterate-N.md` 时，运行落在最新一次增量上。
+
+`feature_dev iterate` 只在 `human_diff` 已经完成或运行已是 `done` 时使用。它打开下一个空号的 `iterate-N.md`（FolderDiff 已有 1–3 时就是 `iterate-4.md`），写上这次范围和上一份留下的未完成项，然后走短循环：implement → verify → human_diff。需求和方案沿用现有文件，不重新走 requirements → design → design_review。侧栏展示这些增量文件，离开门禁的规则与原来相同。侧栏的推进仍然不执行阶段。
+
+验证只在 Linux 或云端跑过、Windows 还没确认时，status 和阶段板会显示一条平台说明（Linux 已验证，Windows 未确认）。这是提示，不是新的阻塞门禁。在 `verify.md` 或 `iterate-N.md` 里写 `platform: linux verified` 与 `platform: windows unconfirmed` 即可记录。详见离线文档。
 
 ---
 
@@ -216,7 +224,7 @@ Desktop / Web 左侧栏有一行 **功能开发 / Feature Dev**（`sidebar.panel
 
 ```sh
 node ./scripts/build.mjs          # 生成 lib/index.js 与 lib/client.js（预构建，安装无需 allowBuilds）
-npm pack                          # 得到 dsh-feature-dev-suite-0.1.3.tgz
+npm pack                          # 得到 dsh-feature-dev-suite-0.1.4.tgz
 # 或
 npm run pack:bundle
 ```
@@ -254,7 +262,10 @@ feature-dev-suite/
 ## 现状
 
 - [x] 阶段契约与门禁语义
-- [x] `feature_dev`：start / status / advance / approve / reject
+- [x] `feature_dev`：start / status / list / advance / approve / reject / adopt / iterate
+- [x] 无 `fd-` 前缀的目录，以及 `requirements.md` 这类不带编号的文件名，可以出现在阶段板上
+- [x] `iterate` 在 human_diff 之后开下一轮 implement → verify → human_diff，不重走需求与方案
+- [x] 平台未确认（例如只验证了 Linux）会显示，但不会拦住 Linux 上的进度
 - [x] `advance` 经 `workflowEngine` 执行（含 design_review 双视角）
 - [x] 可安装 `dsh.bundle` + 预构建 tarball
 - [x] Desktop/Web 侧边栏阶段板（与 `feature_dev` 共用 state）

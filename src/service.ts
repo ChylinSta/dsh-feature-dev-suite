@@ -4,7 +4,7 @@ import type { FeatureDevArgs } from "./actions.js";
 import { FeatureDevError } from "./errors.js";
 import { resolveImplementTools } from "./implement-tools.js";
 import type { WorkflowEngine } from "./runner.js";
-import { listRunStates, readState } from "./state.js";
+import { listRunStates, openRun } from "./offline.js";
 import type { RunState } from "./state.js";
 import { presentRun } from "./view.js";
 import type { RunView } from "./view.js";
@@ -101,7 +101,7 @@ export function createFeatureApi(options: {
       return listRunStates(root).map(present);
     },
     getStatus(runId: string) {
-      return present(readState(root, runId));
+      return present(openRun(root, runId));
     },
     present,
     start(input) {

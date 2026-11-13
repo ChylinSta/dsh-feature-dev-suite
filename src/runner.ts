@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { readArtifactText } from "./artifacts.js";
 import { STAGE_DEFS, shouldRunDeepDesign } from "./phases.js";
 import { buildStageScript } from "./scripts.js";
 import { runDir } from "./state.js";
@@ -69,12 +70,14 @@ export async function executeStage(
   const built = buildStageScript(stage, {
     featureSummary: state.featureSummary,
     brief: readOptional(path.join(dir, "00-brief.md")),
-    requirements: readOptional(path.join(dir, "01-requirements.md")),
-    design: readOptional(path.join(dir, "02-design.md")),
-    testcases: readOptional(path.join(dir, "03-testcases.md")),
-    implNotes: readOptional(path.join(dir, "04-impl-notes.md")),
+    requirements: readArtifactText(dir, "01-requirements.md"),
+    design: readArtifactText(dir, "02-design.md"),
+    testcases: readArtifactText(dir, "03-testcases.md"),
+    implNotes: readArtifactText(dir, "04-impl-notes.md"),
     deep: stage === "design_review" ? shouldRunDeepDesign(state.risks, state.adversarialDesign) : state.adversarialDesign || state.adversarialCode,
     implementTools: Array.isArray(state.implementTools) ? state.implementTools : null,
+    iterate: state.iterate,
+    iterateBrief: (state.iterate ?? 0) > 0 ? readOptional(path.join(dir, `iterate-${state.iterate}.md`)) : "",
   });
   if (!built) {
     return { ok: false, detail: `no executor for stage ${stage}` };
@@ -107,15 +110,23 @@ export async function executeStage(
     } else {
       artifact = "_(empty stage result)_";
     }
-    const out = artifactPath(state, stage);
-    if (out) {
+    const iterating = (state.iterate ?? 0) > 0 && (stage === "implement" || stage === "verify" || stage === "human_diff");
+    const out = iterating
+      ? path.join(dir, `iterate-${state.iterate}.md`)
+      : artifactPath(state, stage);
+    if (out && iterating) {
+      const body = artifact.endsWith("\n") ? artifact : `${artifact}\n`;
+      const section = `\n## ${stage}\n\n${body}`;
+      if (fs.existsSync(out)) fs.appendFileSync(out, section);
+      else fs.writeFileSync(out, `# Iterate ${state.iterate}\n${section}`, "utf8");
+    } else if (out) {
       fs.writeFileSync(out, artifact.endsWith("\n") ? artifact : `${artifact}\n`, "utf8");
     }
     if (stage === "human_diff") {
       const diffPath = path.join(dir, "06-full.diff");
-      if (typeof diff === "string" && diff.trim()) {
+      if (typeof diff === "string" && diff.trim() && !iterating) {
         fs.writeFileSync(diffPath, diff.endsWith("\n") ? diff : `${diff}\n`, "utf8");
-      } else if (!fs.existsSync(diffPath)) {
+      } else if (!fs.existsSync(diffPath) && !iterating) {
         try {
           const { execFileSync } = await import("node:child_process");
           const gitDiff = execFileSync("git", ["diff"], {

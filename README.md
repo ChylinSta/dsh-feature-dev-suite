@@ -4,7 +4,7 @@ Gated feature-development orchestration for DeepSeek Harness (`feature_dev` tool
 
 **Chinese README (primary):** [README.zh.md](./README.zh.md)
 
-Installable as a `dsh.bundle` (`dsh-feature-dev-suite` 0.1.3). See the Chinese README for Desktop Plugin Manager, CLI (`dsh plugin add`), usage, and Linux notes.
+Installable as a `dsh.bundle` (`dsh-feature-dev-suite` 0.1.4). See the Chinese README for Desktop Plugin Manager, CLI (`dsh plugin add`), usage, and Linux notes.
 
 ## Chat and the sidebar
 
@@ -22,7 +22,7 @@ Both faces share one runner and the files under `.feature-dev/<runId>/`. The sid
 
 `status` from the tool includes `next`, `sidebarAdvance`, `hint`, `chat`, `artifact`, `implementTools`, and an `expected:` checklist (`present`, `placeholder`, or `missing` for each stage file). After a gate is approved, `hint` names the following stage and says the next advance does not execute it.
 
-Hand-written runs, including a waived design review, follow [docs/feature-dev-offline.md](./docs/feature-dev-offline.md). Name the folder `fd-<slug>` (for example `fd-folder-diff-v1`) so the board can list it. The sidebar still cannot execute a stage.
+Hand-written runs, including a waived design review, follow [docs/feature-dev-offline.md](./docs/feature-dev-offline.md). `fd-<slug>` (for example `fd-folder-diff-v1`) is still what Start creates. A folder such as `folder-diff-v1` is listed too when it contains stage files. `requirements.md` counts as `01-requirements.md`, and the same alias rule covers design, design review, testcases, implement notes, verify, and human diff. `feature_dev adopt` writes `state.json` from those files and does not overwrite them. `feature_dev iterate` opens the next `iterate-N.md` after `human_diff` and loops implement → verify → human_diff, reusing the existing requirements and design. A pending platform confirmation (Linux verified, Windows unconfirmed) is shown on status and the board and does not block the run. The sidebar still cannot execute a stage.
 
 The sidebar still cannot start a workflow. `workflowEngine.start` has no session on this route, and `agent()` inside a workflow script still cannot carry a tool filter.
 
@@ -42,16 +42,16 @@ Runs already on disk without `implementTools` stay unrestricted. Set the plugin 
 
 `feature_dev` start accepts `implementTools` as a string array for that run only. The board prints the snapshotted list.
 
-## Update an installed Desktop bundle (0.1.3)
+## Update an installed Desktop bundle (0.1.4)
 
 `lib/index.js` and `lib/client.js` are prebuilt. Do not add this package to `allowBuilds`.
 
-1. From this directory: `npm run pack:bundle` → `dsh-feature-dev-suite-0.1.3.tgz`.
+1. From this directory: `npm run pack:bundle` → `dsh-feature-dev-suite-0.1.4.tgz`.
 2. Quit Desktop completely.
 3. With the `dsh` command installed by Desktop (not a global npm `dsh`):
 
    ```sh
-   dsh plugin --profile desktop add /absolute/path/dsh-feature-dev-suite-0.1.3.tgz
+   dsh plugin --profile desktop add /absolute/path/dsh-feature-dev-suite-0.1.4.tgz
    ```
 
    If that profile already has the package and add does not replace it, `dsh plugin --profile desktop remove dsh-feature-dev-suite`, then add the new tarball. The same path works in the sidebar plugin manager.
